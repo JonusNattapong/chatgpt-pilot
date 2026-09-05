@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Features
 
+- ChatGPTMCP owns chatgpt-machine tunnel lifecycle (`773939b`)
+- harden hybrid runtime reliability (`5ed87fd`)
+- add adaptive skill intelligence and memory drawers (#4) (`b7449cc`)
+- **skills**: add 30 curated skills across Cloud, Mobile, Data/ML, and Security (`b0d1d4b`)
+
+### 📚 Documentation
+
+- redesign hybrid reference (`12aac93`)
+- position hero meme at the top of README (`e10628b`)
+- add MCP Tunnel community meme to README (`f76490a`)
+
+### 🧹 Chores & Maintenance
+
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`26068a7`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`64d2744`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`a402d28`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`1dda4ac`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`ab1c82c`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`09cf5d5`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`1f02ba9`)
+
+## [1.0.0] - 2026-09-05
+
+### ✨ Features
+
 - harden hybrid runtime reliability (`5ed87fd`)
 - add adaptive skill intelligence and memory drawers (#4) (`b7449cc`)
 - **skills**: add 30 curated skills across Cloud, Mobile, Data/ML, and Security (`b0d1d4b`)
