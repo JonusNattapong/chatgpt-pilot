@@ -2,7 +2,13 @@
 set -euo pipefail
 
 no_watchdog=false
-if [[ "${1:-}" == "--no-watchdog" ]]; then no_watchdog=true; fi
+force=false
+for arg in "$@"; do
+  case "${arg}" in
+    --no-watchdog) no_watchdog=true ;;
+    --force) force=true ;;
+  esac
+done
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 platform="$(uname -s)"
@@ -87,6 +93,35 @@ if [[ "${runtime_key}" != sk-* ]]; then
 fi
 
 mkdir -p "${profile_dir}"
+
+# Ownership guard: ChatGPTMCP is the sole owner of the `chatgpt-machine`
+# alias and the `chatgpt-machine-runtime` profile (see start-tunnel.ps1).
+owner_path="${project_root}/.tunnel/runtime-owner.json"
+runtime_profile_path="${profile_dir}/chatgpt-machine-runtime.yaml"
+profile_owner=""
+if [[ -f "${runtime_profile_path}" ]]; then
+  profile_owner="$(grep -o '[A-Za-z]:[^" ]*/\(apps/server/\)\?dist/supervisor\.js' "${runtime_profile_path}" | head -n 1 | sed 's|/\(apps/server/\)\?dist/supervisor\.js$||')"
+fi
+daemon_ready=false
+if "${client_path}" runtimes status chatgpt-machine --json 2>/dev/null | grep -q '"ready": *true'; then
+  daemon_ready=true
+fi
+if [[ "${daemon_ready}" == true ]]; then
+  if [[ -n "${profile_owner}" && "${profile_owner}" == "${project_root}" ]]; then
+    echo 'Tunnel already running and owned by this checkout; nothing to do.'
+    "${project_root}/scripts/status-tunnel.sh"
+    exit 0
+  fi
+  if [[ "${force}" != true ]]; then
+    echo "Runtime already owned by: ${profile_owner:-unknown-foreign-owner}. Stop it there first, or re-run with --force to reclaim ownership." >&2
+    exit 1
+  fi
+  echo "WARNING: reclaiming live runtime from foreign owner: ${profile_owner}" >&2
+  "${client_path}" runtimes stop chatgpt-machine >/dev/null 2>&1 || true
+elif [[ -n "${profile_owner}" && "${profile_owner}" != "${project_root}" ]]; then
+  echo "WARNING: runtime profile ${runtime_profile_path} points outside this checkout (${profile_owner}); reclaiming ownership." >&2
+  "${client_path}" runtimes stop chatgpt-machine >/dev/null 2>&1 || true
+fi
 open_arg=""
 if [[ "${access_mode}" == "unrestricted" ]]; then open_arg=" --dangerously-open-machine"; fi
 supervisor_path="${project_root}/dist/supervisor.js"
@@ -94,6 +129,12 @@ if [[ -f "${project_root}/apps/server/dist/supervisor.js" ]]; then
   supervisor_path="${project_root}/apps/server/dist/supervisor.js"
 fi
 mcp_command="node ${supervisor_path} --supervisor-timeout ${supervisor_timeout} --root \"${workspace_root}\" --policy ${policy} --approval-mode ${approval_mode} --machines-file \"${machines_file}\"${open_arg}${provider_args}"
+
+# Claim ownership (mirrors start-tunnel.ps1 runtime-owner.json).
+mkdir -p "${project_root}/.tunnel"
+commit="$(git -C "${project_root}" rev-parse HEAD 2>/dev/null || true)"
+started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '{\n  "alias": "chatgpt-machine",\n  "owner": "%s",\n  "startedAt": "%s",\n  "commit": "%s",\n  "supervisor": "%s",\n  "pid": null\n}\n' "${project_root}" "${started_at}" "${commit}" "${supervisor_path}" > "${owner_path}"
 CONTROL_PLANE_API_KEY="${runtime_key}" "${client_path}" runtimes connect \
   --alias chatgpt-machine \
   --admin-profile default \

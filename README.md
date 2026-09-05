@@ -113,17 +113,28 @@ To connect through OpenAI's developer tunnel:
   ./scripts/start-tunnel.sh
   ```
 
-To check tunnel health or stop the process:
+To check tunnel health, diagnose, restart, or stop:
 
 ```bash
 # Check tunnel status
 .\scripts\status-tunnel.ps1   # Windows
 ./scripts/status-tunnel.sh    # Linux/macOS
 
+# Diagnose everything (ownership, build, tunnel, providers, tool surface)
+.\scripts\doctor.ps1           # Windows
+
+# Restart the full stack (stop, reclaim ownership, start, watchdog)
+.\scripts\restart-tunnel.ps1  # Windows
+./scripts/restart-tunnel.sh     # Linux/macOS
+
 # Stop the tunnel
 .\scripts\stop-tunnel.ps1     # Windows
 ./scripts/stop-tunnel.sh      # Linux/macOS
 ```
+
+`ChatGPTMCP` is the sole owner of the `chatgpt-machine` tunnel lifecycle.
+`start` is idempotent (no-op when already running here) and refuses to steal
+a live runtime owned by another checkout unless `-Force` / `--force` is given.
 
 ## Core Modules
 

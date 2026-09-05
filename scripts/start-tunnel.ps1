@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$NoWatchdog
+    [switch]$NoWatchdog,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,6 +56,79 @@ if (-not (Test-Path -LiteralPath $keyPath)) {
     throw "DPAPI runtime key not found: $keyPath"
 }
 
+# Ownership guard: ChatGPTMCP is the sole owner of the `chatgpt-machine`
+# alias and the `chatgpt-machine-runtime` profile. If the profile currently
+# points outside this repo (e.g. a legacy checkout reclaimed it):
+#   - daemon alive  -> reject, unless -Force reclaims it
+#   - daemon dead   -> stop the stale entry and overwrite the profile below
+# If the daemon is alive and already ours, start is a no-op (idempotent).
+$ownerPath = Join-Path $projectRoot '.tunnel\runtime-owner.json'
+$runtimeProfilePath = Join-Path $profileDir 'chatgpt-machine-runtime.yaml'
+$projectMarker = $projectRoot.Replace('\', '/')
+
+function Get-ProfileOwner {
+    if (-not (Test-Path -LiteralPath $runtimeProfilePath)) { return $null }
+    $text = Get-Content -LiteralPath $runtimeProfilePath -Raw
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    $m = [regex]::Match($text, '(?<repo>[A-Za-z]:[^"\s]*?)/(?:apps/server/)?dist/supervisor\.js')
+    if ($m.Success) { return $m.Groups['repo'].Value.Replace('/', '\') }
+    if ($text -like "*$projectMarker*") { return $projectRoot }
+    return 'unknown-foreign-owner'
+}
+
+function Get-DaemonStatus {
+    try {
+        $raw = & $clientPath runtimes status chatgpt-machine --json 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $raw) { return $null }
+        return ($raw | ConvertFrom-Json)
+    } catch { return $null }
+}
+
+function Test-DaemonReady($status) {
+    return $null -ne $status -and $status.process_running -eq $true -and $status.healthy -eq $true -and $status.ready -eq $true
+}
+
+$daemon = Get-DaemonStatus
+$profileOwner = Get-ProfileOwner
+
+if (Test-DaemonReady $daemon) {
+    if ($profileOwner -eq $projectRoot) {
+        Write-Host 'Tunnel already running and owned by this checkout; nothing to do.'
+        & (Join-Path $PSScriptRoot 'status-tunnel.ps1')
+        exit 0
+    }
+    if (-not $Force) {
+        throw "Runtime already owned by: $profileOwner. Stop it there first, or re-run with -Force to reclaim ownership."
+    }
+    Write-Warning "Reclaiming live runtime from foreign owner: $profileOwner"
+    try { & $clientPath runtimes stop chatgpt-machine 2>$null } catch { }
+} elseif ($profileOwner -and $profileOwner -ne $projectRoot) {
+    Write-Warning "Runtime profile $runtimeProfilePath points outside this checkout ($profileOwner); reclaiming ownership."
+    try { & $clientPath runtimes stop chatgpt-machine 2>$null } catch { }
+}
+
+# Build freshness is advisory here (doctor.ps1 is authoritative): warn when
+# any TypeScript source is newer than the built output so a stale dist can
+# never silently serve an old tool surface.
+try {
+    $stalePackages = @()
+    foreach ($pair in @(
+        @{ Src = Join-Path $projectRoot 'apps\server\src'; Dist = Join-Path $projectRoot 'apps\server\dist' },
+        @{ Src = Join-Path $projectRoot 'packages\skill-hub\src'; Dist = Join-Path $projectRoot 'packages\skill-hub\dist' },
+        @{ Src = Join-Path $projectRoot 'packages\thinkforge\src'; Dist = Join-Path $projectRoot 'packages\thinkforge\dist' },
+        @{ Src = Join-Path $projectRoot 'packages\memory\src'; Dist = Join-Path $projectRoot 'packages\memory\dist' }
+    )) {
+        if (-not (Test-Path -LiteralPath $pair.Src -PathType Container)) { continue }
+        if (-not (Test-Path -LiteralPath $pair.Dist -PathType Container)) { $stalePackages += $pair.Src; continue }
+        $newestSrc = (Get-ChildItem -LiteralPath $pair.Src -Recurse -Filter '*.ts' -File -ErrorAction SilentlyContinue | Measure-Object -Property LastWriteTime -Maximum).Maximum
+        $oldestDist = (Get-ChildItem -LiteralPath $pair.Dist -Recurse -Filter '*.js' -File -ErrorAction SilentlyContinue | Measure-Object -Property LastWriteTime -Minimum).Minimum
+        if ($newestSrc -and (-not $oldestDist -or $newestSrc -gt $oldestDist)) { $stalePackages += $pair.Src }
+    }
+    if ($stalePackages.Count -gt 0) {
+        Write-Warning ("Built output looks stale for: " + ($stalePackages -join ', ') + ". Run 'pnpm build' then restart, or see .\scripts\doctor.ps1.")
+    }
+} catch { }
+
 $secureKey = $null
 $runtimeKey = $env:CONTROL_PLANE_API_KEY
 
@@ -75,6 +149,22 @@ try {
 
     $env:CONTROL_PLANE_API_KEY = $runtimeKey
 
+    # Claim ownership before connecting so a concurrent foreign start can see
+    # who owns the alias; refreshed with the daemon PID after connect.
+    try {
+        $commit = (& git -C $projectRoot rev-parse HEAD 2>$null)
+        if ($LASTEXITCODE -ne 0) { $commit = $null }
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ownerPath) | Out-Null
+        [ordered]@{
+            alias = 'chatgpt-machine'
+            owner = $projectRoot
+            startedAt = (Get-Date).ToString('o')
+            commit = $commit
+            supervisor = $supervisorFile
+            pid = $null
+        } | ConvertTo-Json | Set-Content -LiteralPath $ownerPath -Encoding UTF8
+    } catch { }
+
     & $clientPath runtimes connect `
         --alias chatgpt-machine `
         --admin-profile default `
@@ -90,6 +180,17 @@ try {
     }
 
     & (Join-Path $PSScriptRoot 'status-tunnel.ps1')
+
+    try {
+        $after = Get-DaemonStatus
+        if ($after -and $after.process.pid) {
+            $claim = Get-Content -LiteralPath $ownerPath -Raw | ConvertFrom-Json
+            if ($claim.owner -eq $projectRoot) {
+                $claim.pid = $after.process.pid
+                $claim | ConvertTo-Json | Set-Content -LiteralPath $ownerPath -Encoding UTF8
+            }
+        }
+    } catch { }
 
     if (-not $NoWatchdog -and $env:MCP_TUNNEL_WATCHDOG -ne '1' -and (Test-Path -LiteralPath $watchdogScript)) {
         $existingPid = $null
