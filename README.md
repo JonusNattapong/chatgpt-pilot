@@ -72,7 +72,7 @@ pnpm build
 Run the verification suite to ensure all packages compile and tests pass:
 
 ```bash
-# Run unit tests across all workspace packages (138 tests)
+# Run the current unit-test suite across all workspace packages
 pnpm test
 
 # Verify the capability surface
@@ -165,8 +165,12 @@ The core server exposes file and process control tools with safety boundaries:
 
 Analytical scaffolds that help models structure complex decisions before code generation:
 
-- `think_diverge`: Generates alternative hypotheses, implementations, or architectures.
-- `think_converge`: Synthesizes findings, resolves trade-offs, and structures actionable decisions.
+- `think_analyze_problem`: Models assumptions, constraints, stakeholders, and unknowns before ideation.
+- `think_generate_mechanisms`: Generates concrete mechanism-level alternatives and falsification tests.
+- `think_challenge_idea`: Adversarially tests assumptions, failure modes, evidence needs, and kill criteria.
+- `think_synthesize_ideas`: Combines competing ideas while preserving conflicts and rejected parts.
+- `think_experiment_design`: Converts an idea into a bounded, reversible falsification experiment.
+- `think_unconventional_solve`: Orchestrates analysis, reframing, mechanisms, critique, synthesis, and experiment design.
 - `think_challenge`: Identifies unstated assumptions, edge cases, and failure modes.
 - `think_reframe`: Reformulates a problem under different operational constraints.
 - `think_perspective_swap`: Evaluates designs from different user or system perspectives.
@@ -174,7 +178,7 @@ Analytical scaffolds that help models structure complex decisions before code ge
 
 ### 3. Skills Catalog (`packages/skill-hub`)
 
-A curated repository of 249 currently indexed procedural skills located in the `skills/` directory:
+A curated repository of 139 currently indexed procedural skills located in the `skills/` directory:
 
 - Catalog discovery via `skills_skill_list` and `skills_skill_search`.
 - Task ranking and intent routing via `skills_skill_resolve` and `skills_skill_route`.
@@ -235,12 +239,13 @@ A zero-native-dependency memory engine that stores state in structured Markdown 
 
 | Tool | Purpose | Key Parameters |
 |---|---|---|
-| `think_diverge` | Generate multiple alternative approaches | `prompt`, `count` |
-| `think_converge` | Synthesize options into a structured decision | `inputs`, `criteria` |
-| `think_challenge` | Identify unstated assumptions and risks | `thesis`, `context` |
-| `think_reframe` | Restate problem under alternate constraints | `problem`, `constraints` |
-| `think_perspective_swap` | Review scenario from specific stakeholder views | `scenario`, `perspectives` |
-| `think_stress_test` | Simulate failure scenarios against a system plan | `plan`, `failure_modes` |
+| `think_analyze_problem` | Model problem assumptions and constraints | `problem`, `objective`, `constraints` |
+| `think_reframe_problem` | Reframe through selected thinking methods | `problem`, `methods` |
+| `think_generate_mechanisms` | Generate mechanism-level alternatives | `problem`, `objective`, `methods` |
+| `think_challenge_idea` | Challenge assumptions and define kill criteria | `idea`, `objective`, `assumptions` |
+| `think_synthesize_ideas` | Synthesize competing ideas | `problem`, `ideas`, `objective` |
+| `think_experiment_design` | Design a bounded falsification experiment | `idea`, `objective`, `constraint` |
+| `think_unconventional_solve` | Run the full reasoning pipeline | `problem`, `objective`, `constraints`, `methods` |
 | `skills_skill_list` | List installed skills | `offset`, `limit` |
 | `skills_skill_search` | Literal search over skill name/description | `query`, `limit` |
 | `skills_skill_resolve` | Rank and deduplicate skills for a task | `task`, `limit` |

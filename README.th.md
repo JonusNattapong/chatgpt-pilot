@@ -16,7 +16,7 @@ ChatGPT Pilot เป็นเซิร์ฟเวอร์ Model Context Protoc
 
 - **การทำงานกับระบบเครื่อง (`apps/server`)**: จัดการไฟล์แบบกำหนดขอบเขต, ควบคุมโปรเซสเบื้องหลัง, ตรวจสอบความถูกต้องของ Git ก่อนคอมมิต, และรันโค้ด Python แบบ Stateful ผ่าน `toolpy`
 - **เครื่องมือช่วยคิดและวิเคราะห์ (`packages/thinkforge`)**: เครื่องมือสำหรับวิเคราะห์ปัญหา, ท้าทายสมมติฐาน, จัดกรอบมุมมองใหม่, และจำลองสภาวะขัดข้องของระบบ
-- **คลังกระบวนการทำงาน (`packages/skill-hub`)**: ค้นหาและเรียกใช้งานเวิร์กโฟลว์เฉพาะทางกว่า 249 รายการจากโฟลเดอร์ `skills/`
+- **คลังกระบวนการทำงาน (`packages/skill-hub`)**: ค้นหาและเรียกใช้งานเวิร์กโฟลว์เฉพาะทาง139 รายการจากโฟลเดอร์ `skills/`
 - **ระบบจัดเก็บหน่วยความจำ Markdown (`packages/memory`)**: จัดเก็บข้อมูล, บันทึกการตัดสินใจทางสถาปัตยกรรม, และไทม์ไลน์ในรูปแบบไฟล์ Markdown มาตรฐาน โดยไม่พึ่งพาฐานข้อมูลไบนารีหรือ Native C++
 
 ## สถาปัตยกรรมระบบ
@@ -44,7 +44,7 @@ ChatGPT Pilot เป็นเซิร์ฟเวอร์ Model Context Protoc
 
 ## ความต้องการของระบบ
 
-- **Node.js**: เวอร์ชั่น `20.0.0` ขึ้นไป (แนะนำ `22.x` หรือ `24.x`)
+- **Node.js**: เวอร์ชั่น `22.0.0` ขึ้นไป
 - **pnpm**: เวอร์ชั่น `9.x` หรือ `10.x`
 - **Git**: เวอร์ชั่น `2.30.0` ขึ้นไป
 - **Python**: เวอร์ชั่น `3.10` ขึ้นไปพร้อม `ipykernel` (จำเป็นเฉพาะเมื่อใช้งาน `toolpy`)
@@ -70,7 +70,7 @@ pnpm build
 รันชุดทดสอบเพื่อยืนยันว่าการทำงานข้ามแพลตฟอร์มผ่านเกณฑ์ทั้งหมด:
 
 ```bash
-# รันการทดสอบทั้งหมด (138 tests)
+# รันชุดทดสอบปัจจุบันของทุก workspace package
 pnpm test
 
 # ตรวจสอบ Hybrid Capability Surface
@@ -111,7 +111,7 @@ pnpm check:hybrid
   ./scripts/start-tunnel.sh
   ```
 
-ตรวจสอบสถานะหรือหยุดการทำงานของทันเนล:
+ตรวจสอบสถานะ วินิจฉัย รีสตาร์ต หรือหยุดการทำงานของทันเนล:
 
 ```bash
 # ตรวจสอบสถานะทันเนล
@@ -122,6 +122,17 @@ pnpm check:hybrid
 .\scripts\stop-tunnel.ps1     # Windows
 ./scripts/stop-tunnel.sh      # Linux/macOS
 ```
+
+### Control plane สำหรับ self-diagnosis / self-healing
+
+```text
+runtime_info -> ตรวจ build/HEAD/worker/fingerprint
+capability_diff -> เทียบ live worker กับ fresh build probe
+restart_if_stale -> restart เฉพาะเมื่อพิสูจน์ได้ว่า worker stale
+self_update -> ff-only origin/main -> build -> verify -> supervised restart -> handshake
+```
+
+`self_update` ต้องเปิด `MCP_ALLOW_SELF_UPDATE=1` และจะ fail closed เมื่อ working tree ไม่ clean, ไม่ได้อยู่ `main`, มี unpushed commit หรือ branch divergence
 
 ## โมดูลหลัก
 
@@ -138,16 +149,16 @@ pnpm check:hybrid
 
 โครงสร้างขั้นตอนการวิเคราะห์เพื่อช่วยโมเดลประเมินความเสี่ยงก่อนลงมือเขียนโค้ด:
 
-- `think_diverge`: สร้างทางเลือก แนวคิด หรือสถาปัตยกรรมที่หลากหลาย
-- `think_converge`: สรุปข้อมูล วิเคราะห์ข้อดีข้อเสีย และสรุปผลการตัดสินใจ
-- `think_challenge`: ค้นหาจุดบกพร่อง สมมติฐานที่ไม่ได้ระบุไว้ และความเสี่ยง
-- `think_reframe`: ปรับกรอบปัญหาใหม่ภายใต้ข้อจำกัดและบริบทที่ต่างออกไป
-- `think_perspective_swap`: ตรวจสอบการออกแบบจากมุมมองของผู้ใช้หรือส่วนประกอบอื่น
-- `think_stress_test`: ทดสอบความคงทนของระบบเมื่อเผชิญสภาวะโหลดสูงหรือระบบบางส่วนขัดข้อง
+- `think_analyze_problem`: แตกปัญหา สมมติฐาน ข้อจำกัด และสิ่งที่ยังไม่รู้
+- `think_generate_mechanisms`: สร้างทางเลือกเชิงกลไกพร้อม falsification test
+- `think_challenge_idea`: ทดสอบ failure mode หลักฐานที่ต้องใช้ และ kill criteria
+- `think_synthesize_ideas`: รวมแนวคิดที่แข่งขันกันโดยเก็บข้อขัดแย้งไว้
+- `think_experiment_design`: แปลงแนวคิดเป็นการทดลองที่ rollback ได้
+- `think_unconventional_solve`: orchestrate analysis ถึง experiment แบบครบวงจร
 
 ### 3. คลังกระบวนการทำงาน (`packages/skill-hub`)
 
-ศูนย์รวมขั้นตอนการทำงานสำเร็จรูปกว่า 249 รายการในไดเรกทอรี `skills/`:
+ศูนย์รวมขั้นตอนการทำงานสำเร็จรูป139 รายการในไดเรกทอรี `skills/`:
 
 - ค้นหารายการเวิร์กโฟลว์ผ่าน `skills_skill_list`
 - ดึงคำแนะนำขั้นตอนการทำงานอย่างละเอียดผ่าน `skills_skill_read`
@@ -205,12 +216,13 @@ pnpm check:hybrid
 
 | ชื่อเครื่องมือ | หน้าที่ | พารามิเตอร์หลัก |
 |---|---|---|
-| `think_diverge` | สร้างทางเลือกหรือแนวคิดหลากหลาย | `prompt`, `count` |
-| `think_converge` | สรุปผลการวิเคราะห์เพื่อตัดสินใจ | `inputs`, `criteria` |
-| `think_challenge` | ตรวจสอบสมมติฐานและหาจุดบกพร่อง | `thesis`, `context` |
-| `think_reframe` | จัดกรอบปัญหาใหม่ภายใต้ข้อจำกัดอื่น | `problem`, `constraints` |
-| `think_perspective_swap` | ประเมินผลงานจากมุมมองของผู้มีส่วนได้ส่วนเสีย | `scenario`, `perspectives` |
-| `think_stress_test` | ทดสอบความเสี่ยงของแผนระบบ | `plan`, `failure_modes` |
+| `think_analyze_problem` | วิเคราะห์ปัญหา สมมติฐาน และข้อจำกัด | `problem`, `objective`, `constraints` |
+| `think_reframe_problem` | จัดกรอบปัญหาผ่านวิธีคิดที่เลือก | `problem`, `methods` |
+| `think_generate_mechanisms` | สร้างทางเลือกเชิงกลไก | `problem`, `objective`, `methods` |
+| `think_challenge_idea` | challenge แนวคิดและกำหนด kill criteria | `idea`, `objective`, `assumptions` |
+| `think_synthesize_ideas` | สังเคราะห์แนวคิดที่แข่งขันกัน | `problem`, `ideas`, `objective` |
+| `think_experiment_design` | ออกแบบ falsification experiment | `idea`, `objective`, `constraint` |
+| `think_unconventional_solve` | รัน reasoning pipeline แบบครบวงจร | `problem`, `objective`, `constraints`, `methods` |
 | `skills_skill_list` | เรียกดูรายการทักษะที่มีในระบบ | `filter`, `limit` |
 | `skills_skill_read` | ดึงขั้นตอนการปฏิบัติงานของทักษะ | `name` |
 | `skills_skill_compose` | ดำเนินการตามขั้นตอนของทักษะ | `name`, `parameters` |

@@ -37,12 +37,12 @@ ChatGPT Pilot functions as a unified gateway and capability fabric bridging AI c
 
 ### 2.2 Cognitive Accelerators (`packages/thinkforge`)
 - Provides divergent and convergent thinking structures.
-- Tools: `think_diverge`, `think_converge`, `think_challenge`, `think_reframe`, `think_perspective_swap`, `think_stress_test`.
+- Tools include `think_analyze_problem`, `think_reframe_problem`, `think_generate_mechanisms`, `think_challenge_idea`, `think_synthesize_ideas`, `think_experiment_design`, and `think_unconventional_solve`.
 - Enables models to test hypotheses, find blind spots, and optimize architectures before code generation.
 
 ### 2.3 Dynamic Skills Engine (`packages/skill-hub` + `skills/`)
-- Discovers, validates, and executes procedures from the 139+ skills repository.
-- Skill metadata is exposed via lightweight descriptors (`skills_list`), with full procedures fetched on demand (`skills_get_spec`, `skills_run`).
+- Discovers, validates, routes, and composes procedures from the currently indexed 139-skill repository.
+- Skill metadata and procedures are exposed through `skills_skill_list`, `skills_skill_search`, `skills_skill_resolve`, `skills_skill_route`, `skills_skill_compose`, and `skills_skill_read`.
 
 ### 2.4 Living Memory Book Engine (`packages/memory`)
 - **Pure Markdown Second Brain**: Replaces legacy SQL / SQLite engines with human-readable, zero-dependency Markdown documents.
@@ -58,7 +58,18 @@ ChatGPT Pilot functions as a unified gateway and capability fabric bridging AI c
 
 ---
 
-## 3. Storage Architecture
+## 3. Runtime Control Plane
+
+- `runtime_info`: reports build commit vs Git HEAD, stale-build state, worker PID/uptime, tunnel ownership, contract fingerprint, capability count, and last restart receipt.
+- `capability_diff`: compares the live worker manifest against a fresh `--check` probe and reports added/removed/changed tools plus fingerprint equality.
+- `restart_if_stale`: restarts only for proven worker-behind-dist or surface mismatch; it refuses unsupervised self-termination and reports dist-behind-HEAD as a build prerequisite.
+- `self_update`: opt-in fast-forward of `origin/main`, then build, full verification, supervised restart, and post-restart handshake; it fails closed on dirty trees, non-main branches, unpushed commits, divergence, or fetch failure.
+
+The deterministic contract fingerprint excludes environment-specific timeout configuration so equivalent capability surfaces compare equal across deployments.
+
+---
+
+## 4. Storage Architecture
 
 Storage is split into two deterministic layers:
 
@@ -73,7 +84,7 @@ Storage is split into two deterministic layers:
 
 ---
 
-## 4. Architectural Invariants
+## 5. Architectural Invariants
 
 1. **Zero-Native Dependencies in Memory**: The memory system must remain pure Markdown + Node.js standard library to ensure 100% portability across operating systems without C++ compilation requirements.
 2. **Zero-Config Discovery**: Internal workspace modules must be discoverable automatically from the repository root without requiring manual path flags.
