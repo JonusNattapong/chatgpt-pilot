@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.0] - 2026-09-06
+
+### ✨ Features
+
+- lifecycle integration suite, doctor.sh, watchdog healing (`76cbcdd`)
+
+### 🧹 Chores & Maintenance
+
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`96be978`)
+
 ## [1.0.0] - 2026-09-05
 
 ### ✨ Features
