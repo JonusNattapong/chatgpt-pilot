@@ -84,6 +84,20 @@ function Get-DaemonStatus {
     } catch { return $null }
 }
 
+function Ensure-Watchdog {
+    if ($NoWatchdog -or $env:MCP_TUNNEL_WATCHDOG -eq '1' -or -not (Test-Path -LiteralPath $watchdogScript)) { return }
+    $existingPid = $null
+    if (Test-Path -LiteralPath $watchdogPidPath) {
+        try { $existingPid = [int](Get-Content -LiteralPath $watchdogPidPath -Raw) } catch { $existingPid = $null }
+    }
+    if (-not $existingPid -or -not (Get-Process -Id $existingPid -ErrorAction SilentlyContinue)) {
+        $watchdogArgs = @('-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $watchdogScript)
+        $watchdog = Start-Process powershell.exe -ArgumentList $watchdogArgs -WindowStyle Hidden -PassThru
+        Set-Content -LiteralPath $watchdogPidPath -Value $watchdog.Id -Encoding ASCII
+        Write-Host "Tunnel watchdog started (PID $($watchdog.Id))"
+    }
+}
+
 function Test-DaemonReady($status) {
     return $null -ne $status -and $status.process_running -eq $true -and $status.healthy -eq $true -and $status.ready -eq $true
 }
@@ -94,6 +108,7 @@ $profileOwner = Get-ProfileOwner
 if (Test-DaemonReady $daemon) {
     if ($profileOwner -eq $projectRoot) {
         Write-Host 'Tunnel already running and owned by this checkout; nothing to do.'
+        Ensure-Watchdog
         & (Join-Path $PSScriptRoot 'status-tunnel.ps1')
         exit 0
     }
@@ -192,18 +207,7 @@ try {
         }
     } catch { }
 
-    if (-not $NoWatchdog -and $env:MCP_TUNNEL_WATCHDOG -ne '1' -and (Test-Path -LiteralPath $watchdogScript)) {
-        $existingPid = $null
-        if (Test-Path -LiteralPath $watchdogPidPath) {
-            try { $existingPid = [int](Get-Content -LiteralPath $watchdogPidPath -Raw) } catch { $existingPid = $null }
-        }
-        if (-not $existingPid -or -not (Get-Process -Id $existingPid -ErrorAction SilentlyContinue)) {
-            $watchdogArgs = @('-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $watchdogScript)
-            $watchdog = Start-Process powershell.exe -ArgumentList $watchdogArgs -WindowStyle Hidden -PassThru
-            Set-Content -LiteralPath $watchdogPidPath -Value $watchdog.Id -Encoding ASCII
-            Write-Host "Tunnel watchdog started (PID $($watchdog.Id))"
-        }
-    }
+    Ensure-Watchdog
 }
 finally {
     Remove-Item Env:CONTROL_PLANE_API_KEY -ErrorAction SilentlyContinue

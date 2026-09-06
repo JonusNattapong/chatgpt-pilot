@@ -122,6 +122,7 @@ To check tunnel health, diagnose, restart, or stop:
 
 # Diagnose everything (ownership, build, tunnel, providers, tool surface)
 .\scripts\doctor.ps1           # Windows
+./scripts/doctor.sh             # Linux/macOS
 
 # Restart the full stack (stop, reclaim ownership, start, watchdog)
 .\scripts\restart-tunnel.ps1  # Windows
