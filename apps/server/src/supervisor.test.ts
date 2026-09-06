@@ -82,6 +82,146 @@ rl.on('line', line => {
   }
 });
 
+test('worker exit replacement becomes healthy only after the replacement is ready', async () => {
+  const fixtureDir = await mkdtemp(path.join(tmpdir(), 'machine-replacement-ready-'));
+  const fixture = path.join(fixtureDir, 'worker.mjs');
+  const stateFile = path.join(fixtureDir, 'supervisor.json');
+  await writeFile(fixture, `
+import readline from 'node:readline';
+const generation = Number(process.env.MCP_WORKER_GENERATION || '1');
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on('line', line => {
+  const m = JSON.parse(line);
+  if (m.method === 'initialize') {
+    process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:'test',capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}}})+'\\n');
+    if (generation === 1) setTimeout(() => process.exit(1), 40);
+    return;
+  }
+  if (m.method === 'notifications/initialized') return;
+  if (m.method === 'tools/call') process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{content:[{type:'text',text:'pong'}]}})+'\\n');
+});
+`, 'utf8');
+
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const error = new PassThrough();
+  const supervisor = new McpSupervisor({
+    childEntry: fixture,
+    childArgs: ['--root', fixtureDir],
+    requestTimeoutMs: 1_000,
+    restartDelayMs: 30,
+    readinessTimeoutMs: 200,
+    stateFile,
+    stdio: { input, output, error },
+  });
+  try {
+    supervisor.start();
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 'test' } }) + '\n');
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    const ready = await waitFor(
+      async () => JSON.parse(await readFile(stateFile, 'utf8')) as { health: string; ready: boolean; workerGeneration: number },
+      (state) => state.workerGeneration >= 2 && state.health === 'healthy' && state.ready === true,
+    );
+    assert.ok(ready.workerGeneration >= 2);
+  } finally {
+    supervisor.stop();
+    input.end();
+    await rm(fixtureDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+test('replacement that fails readiness re-enters the restart path', async () => {
+  const fixtureDir = await mkdtemp(path.join(tmpdir(), 'machine-replacement-not-ready-'));
+  const fixture = path.join(fixtureDir, 'worker.mjs');
+  const stateFile = path.join(fixtureDir, 'supervisor.json');
+  await writeFile(fixture, `
+import readline from 'node:readline';
+const generation = Number(process.env.MCP_WORKER_GENERATION || '1');
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on('line', line => {
+  const m = JSON.parse(line);
+  if (m.method === 'initialize' && generation === 1) {
+    process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:'test',capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}}})+'\\n');
+    setTimeout(() => process.exit(1), 40);
+  }
+});
+`, 'utf8');
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const error = new PassThrough();
+  const supervisor = new McpSupervisor({
+    childEntry: fixture,
+    childArgs: ['--root', fixtureDir],
+    requestTimeoutMs: 1_000,
+    restartDelayMs: 20,
+    readinessTimeoutMs: 60,
+    circuitThreshold: 20,
+    stateFile,
+    stdio: { input, output, error },
+  });
+  try {
+    supervisor.start();
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 'test' } }) + '\n');
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    const restarting = await waitFor(
+      async () => JSON.parse(await readFile(stateFile, 'utf8')) as { health: string; ready: boolean; workerGeneration: number; restarts: number },
+      (state) => state.workerGeneration >= 3 && state.ready === false && state.health === 'restarting' && state.restarts >= 2,
+      2_000,
+    );
+    assert.equal(restarting.ready, false);
+  } finally {
+    supervisor.stop();
+    input.end();
+    await rm(fixtureDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+test('repeated worker restarts do not leave a ready generation restarting', async () => {
+  const fixtureDir = await mkdtemp(path.join(tmpdir(), 'machine-repeated-restarts-'));
+  const fixture = path.join(fixtureDir, 'worker.mjs');
+  const stateFile = path.join(fixtureDir, 'supervisor.json');
+  await writeFile(fixture, `
+import readline from 'node:readline';
+const generation = Number(process.env.MCP_WORKER_GENERATION || '1');
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on('line', line => {
+  const m = JSON.parse(line);
+  if (m.method === 'initialize') {
+    process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:'test',capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}}})+'\\n');
+    if (generation < 4) setTimeout(() => process.exit(1), 35);
+  }
+});
+`, 'utf8');
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const error = new PassThrough();
+  const supervisor = new McpSupervisor({
+    childEntry: fixture,
+    childArgs: ['--root', fixtureDir],
+    requestTimeoutMs: 1_000,
+    restartDelayMs: 20,
+    readinessTimeoutMs: 200,
+    circuitThreshold: 20,
+    stateFile,
+    stdio: { input, output, error },
+  });
+  try {
+    supervisor.start();
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 'test' } }) + '\n');
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    const healthy = await waitFor(
+      async () => JSON.parse(await readFile(stateFile, 'utf8')) as { health: string; ready: boolean; workerGeneration: number; restarts: number },
+      (state) => state.workerGeneration >= 4 && state.health === 'healthy' && state.ready === true && state.restarts >= 3,
+      10_000,
+    );
+    assert.equal(healthy.health, 'healthy');
+  } finally {
+    supervisor.stop();
+    input.end();
+    await rm(fixtureDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
 test('killProcessTree terminates a real descendant process tree', async () => {
   const fixtureDir = await mkdtemp(path.join(tmpdir(), 'machine-process-tree-'));
   const fixture = path.join(fixtureDir, 'parent.mjs');

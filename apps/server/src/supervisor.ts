@@ -51,6 +51,7 @@ export interface SupervisorOptions {
   circuitThreshold?: number;
   circuitCooldownMs?: number;
   recoveryStableMs?: number;
+  readinessTimeoutMs?: number;
   stdio?: {
     input: NodeJS.ReadableStream;
     output: NodeJS.WritableStream;
@@ -103,6 +104,7 @@ export class McpSupervisor {
   private circuitRetryAt?: number;
   private failureTimestamps: number[] = [];
   private recoveryTimer?: NodeJS.Timeout;
+  private readinessTimer?: NodeJS.Timeout;
   private restartTimer?: NodeJS.Timeout;
   private pending = new Map<string | number | null, PendingRequest>();
   private queuedLines: string[] = [];
@@ -134,6 +136,7 @@ export class McpSupervisor {
     this.stopping = true;
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
     if (this.restartTimer) clearTimeout(this.restartTimer);
+    if (this.readinessTimer) clearTimeout(this.readinessTimer);
     for (const item of this.pending.values()) clearTimeout(item.timer);
     this.pending.clear();
     this.health = 'stopped';
@@ -219,6 +222,12 @@ export class McpSupervisor {
       this.reinitializing = true;
       const replay = { ...this.initializeMessage, id: REINIT_ID };
       child.stdin.write(JSON.stringify(replay) + '\n');
+      const readinessTimeoutMs = this.options.readinessTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+      this.readinessTimer = setTimeout(() => {
+        if (generation !== this.childGeneration || !this.reinitializing || this.stopping) return;
+        this.readinessTimer = undefined;
+        this.handleWorkerFailure(`worker readiness timeout generation=${generation}`, generation);
+      }, readinessTimeoutMs).unref();
     }
   }
 
@@ -264,7 +273,13 @@ export class McpSupervisor {
   }
 
   private markWorkerReady(generation: number): void {
+    if (generation !== this.childGeneration || !this.child || this.child.killed) return;
+    if (this.readinessTimer) {
+      clearTimeout(this.readinessTimer);
+      this.readinessTimer = undefined;
+    }
     this.reinitializing = false;
+    this.restarting = false;
     const probing = this.circuit === 'half_open';
     this.health = probing ? 'degraded' : 'healthy';
     this.writeState(true, this.health);
@@ -322,8 +337,11 @@ export class McpSupervisor {
         clearTimeout(item.timer);
         this.pending.delete(message.id);
       }
-    }
-    this.output.write(line + '\n');
+      }
+      if (generation === 1 && this.initializeMessage?.id === message.id && message.error === undefined) {
+        this.markWorkerReady(generation);
+      }
+      this.output.write(line + '\n');
   }
 
   private onRequestTimeout(id: string | number | null, method: string, timeoutMs: number): void {
@@ -393,6 +411,10 @@ export class McpSupervisor {
     if (this.recoveryTimer) {
       clearTimeout(this.recoveryTimer);
       this.recoveryTimer = undefined;
+    }
+    if (this.readinessTimer) {
+      clearTimeout(this.readinessTimer);
+      this.readinessTimer = undefined;
     }
     this.restarting = true;
     this.reinitializing = Boolean(this.initializeMessage);
