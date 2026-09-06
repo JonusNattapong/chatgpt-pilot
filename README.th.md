@@ -10,13 +10,13 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 [![Model Context Protocol](https://img.shields.io/badge/MCP-2.0-purple.svg)](https://modelcontextprotocol.io/)
 
-ChatGPT Pilot เป็นเซิร์ฟเวอร์ Model Context Protocol (MCP) ระดับเครื่องโลคอลที่รวบรวมเครื่องมือสั่งการระบบ, การจัดการหน่วยความจำ, และกระบวนการวิเคราะห์สำหรับเชื่อมต่อกับ ChatGPT, Codex และไคลเอนต์ MCP อื่นๆ
+ChatGPT Pilot คือ MCP Server สำหรับเชื่อม ChatGPT, Codex และ MCP Client อื่น ๆ เข้ากับเครื่องของเราโดยตรง โดยรวมเครื่องมือจัดการไฟล์และโปรเซส ระบบช่วยคิด คลังทักษะ และหน่วยความจำไว้หลังการเชื่อมต่อเดียว
 
-ระบบเชื่อมโยง 4 ความสามารถหลักเข้าด้วยกันผ่านการเชื่อมต่อ MCP เดียว:
+ระบบแบ่งความสามารถหลักออกเป็น 4 ส่วน:
 
 - **การทำงานกับระบบเครื่อง (`apps/server`)**: จัดการไฟล์แบบกำหนดขอบเขต, ควบคุมโปรเซสเบื้องหลัง, ตรวจสอบความถูกต้องของ Git ก่อนคอมมิต, และรันโค้ด Python แบบ Stateful ผ่าน `toolpy`
 - **เครื่องมือช่วยคิดและวิเคราะห์ (`packages/thinkforge`)**: เครื่องมือสำหรับวิเคราะห์ปัญหา, ท้าทายสมมติฐาน, จัดกรอบมุมมองใหม่, และจำลองสภาวะขัดข้องของระบบ
-- **คลังกระบวนการทำงาน (`packages/skill-hub`)**: ค้นหาและเรียกใช้งานเวิร์กโฟลว์เฉพาะทาง139 รายการจากโฟลเดอร์ `skills/`
+- **Skill Hub (`packages/skill-hub`)**: ค้นหา จัดอันดับ และประกอบ workflow จากทักษะ 139 รายการจากโฟลเดอร์ `skills/`
 - **ระบบจัดเก็บหน่วยความจำ Markdown (`packages/memory`)**: จัดเก็บข้อมูล, บันทึกการตัดสินใจทางสถาปัตยกรรม, และไทม์ไลน์ในรูปแบบไฟล์ Markdown มาตรฐาน โดยไม่พึ่งพาฐานข้อมูลไบนารีหรือ Native C++
 
 ## สถาปัตยกรรมระบบ
@@ -42,7 +42,7 @@ ChatGPT Pilot เป็นเซิร์ฟเวอร์ Model Context Protoc
               └───────────────┘   └─────────────┘ └───────────┘ └────────────────┘
 ```
 
-## ความต้องการของระบบ
+## สิ่งที่ต้องมี
 
 - **Node.js**: เวอร์ชั่น `22.0.0` ขึ้นไป
 - **pnpm**: เวอร์ชั่น `9.x` หรือ `10.x`
@@ -51,7 +51,7 @@ ChatGPT Pilot เป็นเซิร์ฟเวอร์ Model Context Protoc
 
 ## การเริ่มต้นใช้งาน
 
-### 1. โคลนคลังโค้ดและติดตั้งส่วนประกอบ
+### 1. Clone และติดตั้ง dependencies
 
 ```bash
 git clone https://github.com/JonusNattapong/chatgpt-pilot.git
@@ -59,7 +59,7 @@ cd chatgpt-pilot
 pnpm install
 ```
 
-### 2. คอมไพล์แพ็กเกจ
+### 2. Build
 
 ```bash
 pnpm build
@@ -67,7 +67,7 @@ pnpm build
 
 ### 3. ตรวจสอบการทำงาน
 
-รันชุดทดสอบเพื่อยืนยันว่าการทำงานข้ามแพลตฟอร์มผ่านเกณฑ์ทั้งหมด:
+รันชุดตรวจสอบเพื่อให้แน่ใจว่าโค้ดปัจจุบัน build และผ่านทุก test:
 
 ```bash
 # รันชุดทดสอบปัจจุบันของทุก workspace package
@@ -81,7 +81,7 @@ pnpm check:hybrid
 
 #### โหมด Stdio (Claude Desktop, Antigravity หรือ CLI โลคอล)
 
-เพิ่มการตั้งค่าลงในไฟล์คอนฟิกของไคลเอนต์:
+เพิ่ม server ลงใน config ของ MCP Client:
 
 ```json
 {
@@ -100,7 +100,7 @@ pnpm check:hybrid
 
 #### โหมด Tunnel (ChatGPT Desktop หรือ ChatGPT Web)
 
-เชื่อมต่อผ่านทันเนลสำหรับนักพัฒนาของ OpenAI:
+หากต้องการใช้งานจาก ChatGPT Web/Desktop ให้เปิด tunnel:
 
 - **Windows (PowerShell)**:
   ```powershell
@@ -111,7 +111,7 @@ pnpm check:hybrid
   ./scripts/start-tunnel.sh
   ```
 
-ตรวจสอบสถานะ วินิจฉัย รีสตาร์ต หรือหยุดการทำงานของทันเนล:
+คำสั่งสำหรับตรวจสถานะและควบคุม tunnel:
 
 ```bash
 # ตรวจสอบสถานะทันเนล
@@ -123,7 +123,7 @@ pnpm check:hybrid
 ./scripts/stop-tunnel.sh      # Linux/macOS
 ```
 
-### Control plane สำหรับ self-diagnosis / self-healing
+### Control plane: ตรวจและกู้ runtime จาก ChatGPT
 
 ```text
 runtime_info -> ตรวจ build/HEAD/worker/fingerprint
@@ -134,39 +134,39 @@ self_update -> ff-only origin/main -> build -> verify -> supervised restart -> h
 
 `self_update` ต้องเปิด `MCP_ALLOW_SELF_UPDATE=1` และจะ fail closed เมื่อ working tree ไม่ clean, ไม่ได้อยู่ `main`, มี unpushed commit หรือ branch divergence
 
-## โมดูลหลัก
+## ส่วนประกอบหลัก
 
-### 1. การทำงานกับระบบเครื่อง (`apps/server`)
+### 1. System & Machine (`apps/server`)
 
-เซิร์ฟเวอร์หลักควบคุมการเข้าถึงระบบไฟล์และโปรเซสด้วยมาตรการจำกัดขอบเขต:
+ส่วนนี้เป็นชั้นที่คุยกับเครื่องโดยตรง และเป็นจุดที่บังคับใช้ขอบเขตความปลอดภัย:
 
 - **เครื่องมือจัดการไฟล์**: อ่านและแก้ไขไฟล์แบบ Transactional พร้อมตรวจเช็คความถูกต้องด้วย SHA-256 (`read_file`, `write_file`, `edit_file`, `find_files`, `search_code`)
 - **การจัดการโปรเซส**: ควบคุมโปรเซสเบื้องหลังด้วย Supervisor ติดตามเอาต์พุตแบบสตรีมและหยุดโปรเซสได้อย่างสมบูรณ์ (`start_process`, `read_process_output`, `process_write`, `process_wait`, `stop_process`)
 - **การตรวจสอบ Git ก่อนคอมมิต**: `git_commit_verified` รันคำสั่งตรวจสอบ (`test`, `build`) บน Index ชั่วคราว หากไม่ผ่านหรือมีการแก้ไขไฟล์นอกเหนือคำสั่ง การคอมมิตจะถูกยกเลิกทันที
 - **Persistent Python (`toolpy`)**: เซสชัน IPython แบบคงสถานะ ช่วยเก็บตัวแปรข้ามคำสั่งและเรียกใช้ความสามารถของ MCP ผ่านฟังก์ชัน Python
 
-### 2. เครื่องมือช่วยคิดและวิเคราะห์ (`packages/thinkforge`)
+### 2. ThinkForge (`packages/thinkforge`)
 
-โครงสร้างขั้นตอนการวิเคราะห์เพื่อช่วยโมเดลประเมินความเสี่ยงก่อนลงมือเขียนโค้ด:
+ชุดเครื่องมือสำหรับคิดให้เป็นระบบก่อนลงมือแก้ปัญหาหรือเขียนโค้ด:
 
 - `think_analyze_problem`: แตกปัญหา สมมติฐาน ข้อจำกัด และสิ่งที่ยังไม่รู้
-- `think_generate_mechanisms`: สร้างทางเลือกเชิงกลไกพร้อม falsification test
-- `think_challenge_idea`: ทดสอบ failure mode หลักฐานที่ต้องใช้ และ kill criteria
+- `think_generate_mechanisms`: สร้างทางเลือกที่อธิบายกลไกชัดเจน พร้อมวิธีพิสูจน์ว่าแนวคิดนั้นผิดได้
+- `think_challenge_idea`: โจมตีแนวคิด หา failure mode ระบุหลักฐานที่ต้องมี และเงื่อนไขที่ควรหยุดแนวทางนั้น
 - `think_synthesize_ideas`: รวมแนวคิดที่แข่งขันกันโดยเก็บข้อขัดแย้งไว้
-- `think_experiment_design`: แปลงแนวคิดเป็นการทดลองที่ rollback ได้
-- `think_unconventional_solve`: orchestrate analysis ถึง experiment แบบครบวงจร
+- `think_experiment_design`: เปลี่ยนแนวคิดให้เป็นการทดลองขนาดเล็กที่ย้อนกลับได้และมีเกณฑ์ตัดสินชัดเจน
+- `think_unconventional_solve`: รันกระบวนการตั้งแต่วิเคราะห์ปัญหาไปจนถึงออกแบบการทดลอง
 
-### 3. คลังกระบวนการทำงาน (`packages/skill-hub`)
+### 3. Skill Hub (`packages/skill-hub`)
 
-ศูนย์รวมขั้นตอนการทำงานสำเร็จรูป139 รายการในไดเรกทอรี `skills/`:
+Skill Hub จัดการทักษะ 139 รายการใน `skills/` และโหลดรายละเอียดเมื่อจำเป็นแทนการใส่ทุกอย่างเข้า context ตั้งแต่ต้น:
 
 - ค้นหารายการเวิร์กโฟลว์ผ่าน `skills_skill_list`
 - ดึงคำแนะนำขั้นตอนการทำงานอย่างละเอียดผ่าน `skills_skill_read`
 - เรียกประมวลผลกระบวนการผ่าน `skills_skill_compose`
 
-### 4. ระบบจัดเก็บหน่วยความจำ Markdown (`packages/memory`)
+### 4. Memory (`packages/memory`)
 
-ระบบจัดการข้อมูลความจำแบบไฟล์ Markdown ภายใต้โฟลเดอร์ `.pilot/memory/`:
+หน่วยความจำเก็บเป็น Markdown ใต้ `.pilot/memory/` เพื่อให้อ่าน ตรวจสอบ สำรอง และย้ายเครื่องได้ง่าย:
 
 - **สารบัญหลัก (`TOC.md`)**: ดัชนีระบุหมวดหมู่ หัวข้อย่อย และบันทึกเวลา
 - **สรุปภาพรวม (`SUMMARY.md`)**: สรุปบริบทของระบบ งานที่กำลังดำเนินอยู่ และรูปแบบสถาปัตยกรรม
@@ -178,9 +178,9 @@ self_update -> ff-only origin/main -> build -> verify -> supervised restart -> h
 - **บันทึกตามช่วงเวลา (`timesteps/YYYY-MM-DD.md`)**: บันทึกเหตุการณ์ประจำวันเพื่อการค้นหาย้อนหลัง
 - **การตั้งค่าเริ่มต้นอัตโนมัติ (Self-Seeding)**: คัดลอกเทมเพลตเริ่มต้นจาก `packages/memory/seed/` ให้อัตโนมัติเมื่อติดตั้งบนระบบใหม่
 
-## ตารางอ้างอิงเครื่องมือ (Tool Reference)
+## เครื่องมือที่ใช้บ่อย
 
-### เครื่องมือควบคุมระบบ
+### System / Machine
 
 | ชื่อเครื่องมือ | หน้าที่ | พารามิเตอร์หลัก |
 |---|---|---|
@@ -199,7 +199,7 @@ self_update -> ff-only origin/main -> build -> verify -> supervised restart -> h
 | `git_commit_verified` | คอมมิตโค้ดหลังจากผ่านการทดสอบ Build/Test | `message`, `paths`, `profile` |
 | `toolpy` | รันโค้ด Python ในเซสชัน IPython แบบคงสถานะ | `code`, `reset_session`, `allow_tools` |
 
-### เครื่องมือหน่วยความจำ
+### Memory
 
 | ชื่อเครื่องมือ | หน้าที่ | พารามิเตอร์หลัก |
 |---|---|---|
@@ -212,17 +212,17 @@ self_update -> ff-only origin/main -> build -> verify -> supervised restart -> h
 | `memory_stats` | แสดงสถิติจำนวนไฟล์ คำ และขนาดข้อมูล | ไม่มี |
 | `memory_recall` | เรียกดูข้อมูลแบบรวม (ค้นหาตามคำ, หัวข้อ, หรือเวลา) | `query`, `topic`, `timestep` |
 
-### เครื่องมือช่วยคิดและคลังทักษะ
+### ThinkForge / Skill Hub
 
 | ชื่อเครื่องมือ | หน้าที่ | พารามิเตอร์หลัก |
 |---|---|---|
 | `think_analyze_problem` | วิเคราะห์ปัญหา สมมติฐาน และข้อจำกัด | `problem`, `objective`, `constraints` |
 | `think_reframe_problem` | จัดกรอบปัญหาผ่านวิธีคิดที่เลือก | `problem`, `methods` |
 | `think_generate_mechanisms` | สร้างทางเลือกเชิงกลไก | `problem`, `objective`, `methods` |
-| `think_challenge_idea` | challenge แนวคิดและกำหนด kill criteria | `idea`, `objective`, `assumptions` |
+| `think_challenge_idea` | ท้าทายแนวคิด หา failure mode และเกณฑ์ที่ควรหยุด | `idea`, `objective`, `assumptions` |
 | `think_synthesize_ideas` | สังเคราะห์แนวคิดที่แข่งขันกัน | `problem`, `ideas`, `objective` |
-| `think_experiment_design` | ออกแบบ falsification experiment | `idea`, `objective`, `constraint` |
-| `think_unconventional_solve` | รัน reasoning pipeline แบบครบวงจร | `problem`, `objective`, `constraints`, `methods` |
+| `think_experiment_design` | ออกแบบการทดลองเพื่อพิสูจน์หรือหักล้างแนวคิด | `idea`, `objective`, `constraint` |
+| `think_unconventional_solve` | รันกระบวนการคิดครบตั้งแต่วิเคราะห์จนถึงออกแบบการทดลอง | `problem`, `objective`, `constraints`, `methods` |
 | `skills_skill_list` | เรียกดูรายการทักษะที่มีในระบบ | `filter`, `limit` |
 | `skills_skill_read` | ดึงขั้นตอนการปฏิบัติงานของทักษะ | `name` |
 | `skills_skill_compose` | ดำเนินการตามขั้นตอนของทักษะ | `name`, `parameters` |
@@ -241,7 +241,7 @@ self_update -> ff-only origin/main -> build -> verify -> supervised restart -> h
 | `--audit-file` | `MCP_AUDIT_FILE` | `.pilot/audit.ndjson` | ไฟล์บันทึกประวัติการเรียกใช้เครื่องมือ |
 | `--max-timeout` | `MCP_SUPERVISOR_TIMEOUT_MS` | `600000` | เวลาหมดอายุสูงสุดของเครื่องมือ (มิลลิวินาที) |
 
-## ความปลอดภัยและการกำกับดูแล
+## ความปลอดภัย
 
 - **การจำกัดขอบเขตระบบไฟล์**: ในโหมด Workspace การอ่าน เขียน และค้นหาจะถูกจำกัดอยู่ภายใต้ `--root` เท่านั้น หากมี Symlink ชี้ออกไปภายนอกจะถูกปฏิเสธ
 - **การควบคุมโปรเซส**: ทุกโปรเซสเบื้องหลังถูกจัดการโดย Supervisor Daemon พร้อมระบบตัดการทำงานอัตโนมัติ (Circuit Breaker) เมื่อโปรเซสค้างหรือขัดข้องต่อเนื่อง
