@@ -43,8 +43,10 @@ function parseCommit(subject = '') {
   };
 }
 
-function generateChangelogSection(version, date, commits) {
-  const categories = {
+const CATEGORY_ORDER = ['feat', 'fix', 'docs', 'refactor', 'test', 'ci', 'chore', 'other'];
+
+function emptyCategories() {
+  return {
     feat: { title: '✨ Features', items: [] },
     fix: { title: '🐛 Bug Fixes', items: [] },
     docs: { title: '📚 Documentation', items: [] },
@@ -54,31 +56,71 @@ function generateChangelogSection(version, date, commits) {
     chore: { title: '🧹 Chores & Maintenance', items: [] },
     other: { title: '🔨 Other Changes', items: [] },
   };
+}
 
+function shortHashOf(commit) {
+  return commit.hash ? commit.hash.slice(0, 7) : '';
+}
+
+function formatEntry(commit) {
+  const parsed = parseCommit(commit.subject);
+  const scopePrefix = parsed.scope ? `**${parsed.scope}**: ` : '';
+  const shortHash = shortHashOf(commit) ? ` (\`${shortHashOf(commit)}\`)` : '';
+  return { key: parsed.type in emptyCategories() ? parsed.type : 'other', line: `- ${scopePrefix}${parsed.message}${shortHash}` };
+}
+
+function categorize(commits) {
+  const categories = emptyCategories();
   for (const c of commits) {
-    const parsed = parseCommit(c.subject);
-    const target = categories[parsed.type] || categories.other;
-    const scopePrefix = parsed.scope ? `**${parsed.scope}**: ` : '';
-    const shortHash = c.hash ? ` (\`${c.hash.slice(0, 7)}\`)` : '';
-    target.items.push(`- ${scopePrefix}${parsed.message}${shortHash}`);
+    const entry = formatEntry(c);
+    categories[entry.key].items.push(entry.line);
   }
+  return CATEGORY_ORDER.map((key) => ({ key, ...categories[key] })).filter((cat) => cat.items.length > 0);
+}
+
+function generateChangelogSection(version, date, commits) {
+  const categories = categorize(commits);
 
   let section = `## [${version}] - ${date}\n\n`;
 
-  let hasEntries = false;
-  for (const key of Object.keys(categories)) {
-    const cat = categories[key];
-    if (cat.items.length > 0) {
-      hasEntries = true;
-      section += `### ${cat.title}\n\n${cat.items.join('\n')}\n\n`;
-    }
+  if (categories.length === 0) {
+    section += `- Maintenance and internal stability updates.\n\n`;
+    return section;
   }
 
-  if (!hasEntries) {
-    section += `- Maintenance and internal stability updates.\n\n`;
+  for (const cat of categories) {
+    section += `### ${cat.title}\n\n${cat.items.join('\n')}\n\n`;
   }
 
   return section;
+}
+
+// Merge fresh entries into an existing `## [version]` section instead of
+// prepending a duplicate section. Returns the updated content, or null when
+// no matching version section exists (caller then prepends a new section).
+function mergeIntoVersionSection(content, version, commits) {
+  const groups = categorize(commits);
+  if (groups.length === 0) return content;
+  const head = `## [${version}]`;
+  const start = content.indexOf(head);
+  if (start === -1) return null;
+  const nextSection = content.indexOf('\n## [', start + head.length);
+  const end = nextSection === -1 ? content.length : nextSection + 1;
+  let section = content.slice(start, end);
+  for (const group of groups) {
+    const catHead = `### ${group.title}`;
+    const at = section.indexOf(catHead);
+    if (at === -1) {
+      section = section.replace(/\s*$/, '') + `\n\n${catHead}\n\n${group.items.join('\n')}\n`;
+    } else {
+      const lineEnd = section.indexOf('\n', at) + 1;
+      const blankEnd = section.indexOf('\n\n', lineEnd);
+      const catEnd = section.indexOf('\n### ', lineEnd);
+      const insertAt = blankEnd !== -1 && (catEnd === -1 || blankEnd < catEnd) ? blankEnd : (catEnd === -1 ? section.length : catEnd);
+      section = section.slice(0, insertAt) + `\n${group.items.join('\n')}` + section.slice(insertAt);
+    }
+  }
+  return content.slice(0, start) + section + content.slice(end);
 }
 
 export function updateChangelog(newVersion) {
@@ -96,7 +138,26 @@ export function updateChangelog(newVersion) {
   const changelogPath = path.resolve('CHANGELOG.md');
   const currentContent = existsSync(changelogPath) ? readFileSync(changelogPath, 'utf8') : '';
 
-  const newSection = generateChangelogSection(version, today, commits);
+  // Idempotency: `git log` covers the whole untagged history, so skip
+  // commits whose short hash is already recorded. Re-running the script
+  // must never duplicate sections or entries.
+  const fresh = commits.filter((c) => {
+    const short = shortHashOf(c);
+    return short !== '' && !currentContent.includes(`\`${short}\``);
+  });
+  if (fresh.length === 0) {
+    console.log('[Changelog] Already up to date; no new commits to record.');
+    return;
+  }
+
+  const merged = mergeIntoVersionSection(currentContent, version, fresh);
+  if (merged !== null && merged !== currentContent) {
+    writeFileSync(changelogPath, merged, 'utf8');
+    console.log(`[Changelog] Merged ${fresh.length} new commit(s) into existing ## [${version}] section.`);
+    return;
+  }
+
+  const newSection = generateChangelogSection(version, today, fresh);
 
   // If header exists, inject after header
   let updatedContent = '';

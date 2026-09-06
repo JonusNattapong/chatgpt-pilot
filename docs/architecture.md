@@ -73,6 +73,12 @@ ChatGPT Pilot functions as a unified gateway and capability fabric bridging AI c
 - `learning_rollback` withdraws proposals or removes only the Memory artifact associated with a promoted candidate.
 - Todo and learning JSON use atomic temp-file/rename persistence with serialized in-process mutations and fail closed on corrupt state.
 
+### 2.7 Durable Flow Orchestration (`apps/server`)
+- `flow_create` plans a durable DAG workflow from a goal plus steps; independent ready steps are eligible to run concurrently up to the run concurrency limit. Steps reference inner capabilities (with `expected_sha256` support on `edit_file` inputs) and are re-checked against policy at execution time.
+- `flow_run` executes a planned run, `flow_get` reads one run with all step states, and `flow_events` reads the append-only event log plus recent checkpoints.
+- `flow_resume` resumes a failed or interrupted run; unknown side effects fail closed unless `retry_uncertain` is explicitly authorized. `flow_cancel` persistently marks a run cancelled so no new step batch is scheduled.
+- Flow capabilities are grouped under `flow` in `capability_registry` and stay behind `toolpy` on the Hybrid surface, so ChatGPT composes DAGs programmatically instead of chaining dozens of direct calls.
+
 ---
 
 ## 3. Runtime Control Plane
