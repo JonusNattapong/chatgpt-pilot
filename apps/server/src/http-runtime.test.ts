@@ -56,7 +56,7 @@ test('real HTTP runtime exposes distinct liveness and readiness metadata', async
     assert.equal(healthBody.ok, true);
     assert.equal(healthBody.status, 'alive');
     assert.equal(healthBody.version, '1.0.0');
-    assert.equal(healthBody.contractVersion, 7);
+    assert.equal(healthBody.contractVersion, 8);
 
     const ready = await fetch(`http://127.0.0.1:${port}/readyz`);
     assert.equal(ready.status, 200);

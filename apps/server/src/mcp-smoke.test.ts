@@ -40,6 +40,8 @@ test('stdio MCP exposes and executes the machine tools', async () => {
       'audit_recent',
       'audit_search',
       'capability_diff',
+      'context_explain',
+      'context_info',
       'disk_info',
       'edit_file',
       'environment_info',

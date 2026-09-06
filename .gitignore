@@ -7,6 +7,7 @@ coverage/
 .DS_Store
 *.log
 .pilot/
+.skill-hub/
 .chatgpt-machine/
 .tunnel/
 *.sqlite

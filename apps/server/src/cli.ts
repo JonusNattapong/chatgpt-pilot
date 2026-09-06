@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { configEnvironment, initLocalConfig, loadLocalConfig, localConfigPath, setWorkspaceRoot, type LocalConfig } from './config.js';
 import { machinesConfigPath, readMachineRegistry, removeMachine, upsertMachine } from './machine-router.js';
 import { APP_VERSION } from './version.js';
+import { initGlobalGpt } from './context.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, '..');
@@ -86,11 +87,12 @@ function serverArgs(config: LocalConfig): string[] {
 }
 
 async function setup(): Promise<void> {
+  const globalGpt = await initGlobalGpt();
   const configFile = initLocalConfig(projectRoot);
   const config = loadLocalConfig(projectRoot);
   const missing = preflight(projectRoot);
 
-  process.stdout.write(`chatgpt-local setup\nproject: ${projectRoot}\nconfig: ${configFile}\nworkspace: ${config.workspaceRoot}\naccess: ${config.accessMode}\n`);
+  process.stdout.write(`chatgpt-local setup\nproject: ${projectRoot}\nconfig: ${configFile}\nglobal_gpt: ${globalGpt.path} (${globalGpt.created ? 'created' : 'existing'})\nworkspace: ${config.workspaceRoot}\naccess: ${config.accessMode}\n`);
   if (missing.length) {
     process.stdout.write(`missing: ${missing.join(', ')}\n\nSee README.md setup instructions, then run: chatgpt-local up\n`);
     process.exitCode = 1;

@@ -145,6 +145,26 @@ self_update -> ff-only origin/main -> build -> verify -> supervised restart -> h
 - **การตรวจสอบ Git ก่อนคอมมิต**: `git_commit_verified` รันคำสั่งตรวจสอบ (`test`, `build`) บน index ชั่วคราว หากตรวจสอบไม่ผ่านหรือพบว่า working tree ถูกแก้ระหว่างตรวจสอบ ระบบจะยกเลิกการคอมมิตทันที
 - **Persistent Python (`toolpy`)**: เซสชัน IPython แบบคงสถานะ เก็บตัวแปรข้ามคำสั่งได้ และเรียกความสามารถของ MCP ผ่านฟังก์ชัน Python
 
+#### GPT.md: บริบทสำหรับ ChatGPT Pilot
+
+Pilot โหลดกติกาการทำงานเป็นลำดับชั้นที่ตรวจสอบที่มาได้:
+
+```text
+runtime/system security       # กฎบังคับ ห้าม GPT.md ลดระดับความปลอดภัย
+        ↓
+~/.pilot/GPT.md               # ค่าเริ่มต้นของผู้ใช้ ใช้กับทุก repo
+        ↓
+<repo>/AGENTS.md              # กติกาวิศวกรรมที่ใช้ร่วมกับ agent อื่น
+        ↓
+<repo>/GPT.md                 # บริบทเฉพาะ ChatGPT/Pilot ของ repo นี้
+        ↓
+คำสั่งปัจจุบันของผู้ใช้
+```
+
+`pnpm pilot setup` จะสร้าง `~/.pilot/GPT.md` ให้ครั้งแรกถ้ายังไม่มี และจะไม่เขียนทับไฟล์เดิม ส่วน `GPT.md` ที่ root ของ repo สามารถ commit ไปกับโปรเจกต์ได้ตามปกติ
+
+ใช้ `context_info` เพื่อดูว่า Pilot โหลดไฟล์ใดอยู่ และใช้ `context_explain` เพื่อตามว่ากติกาหรือข้อความหนึ่งมาจาก source ไหน ในโหมด workspace ระบบจะไม่ไต่ขึ้นไปอ่าน `GPT.md` หรือ `AGENTS.md` นอกขอบเขตที่กำหนด
+
 ### 2. ThinkForge (`packages/thinkforge`)
 
 ชุดเครื่องมือสำหรับคิดให้เป็นระบบก่อนลงมือแก้ปัญหาหรือเขียนโค้ด:
@@ -184,6 +204,8 @@ Skill Hub จัดการทักษะ 139 รายการใน `skills
 
 | ชื่อเครื่องมือ | หน้าที่ | พารามิเตอร์หลัก |
 |---|---|---|
+| `context_info` | ดูลำดับและเนื้อหา GPT.md / AGENTS.md ที่ Pilot โหลดอยู่ | `path`, `include_content` |
+| `context_explain` | ตามที่มาของกติกาหรือข้อความใน context พร้อมลำดับความสำคัญ | `path`, `query` |
 | `read_file` | อ่านเนื้อหาไฟล์แบบจำกัดขนาด พร้อมเลขบรรทัด | `path`, `offset`, `limit`, `expected_sha256` |
 | `write_file` | เขียนหรือสร้างไฟล์ใหม่ พร้อมระบบป้องกันการเขียนทับ | `path`, `content`, `overwrite`, `expected_sha256` |
 | `edit_file` | แก้ไขบล็อกข้อความแบบเจาะจง | `path`, `edits`, `expected_sha256` |

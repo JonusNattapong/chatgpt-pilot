@@ -53,6 +53,7 @@ import { gitCommitVerified, verifyChanges, type VerificationProfile } from './ve
 import { createMachineRoutingSpecs } from './machine-router.js';
 import { PersistentIpythonRuntime, type RuntimeCapability } from './runtime-exec.js';
 import { osintFetch, osintSearch, type OsintScope } from './osint.js';
+import { explainPilotContext, loadPilotContext } from './context.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -78,6 +79,8 @@ export interface ToolContext extends MachineAccess {
   /** Additional provider capabilities made available behind runtime_exec/toolpy. */
   runtimeCapabilities?: () => readonly ToolSpec[];
   runtimePolicyCheck?: (spec: ToolSpec, args: Record<string, unknown>) => RuntimePolicyDecision;
+  /** Optional override used by tests or embedded deployments for ~/.pilot. */
+  pilotHome?: string;
 }
 
 export interface ToolSpec {
@@ -552,8 +555,50 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
       },
     },
     {
+      name: 'context_info',
+      description: 'Load the effective ChatGPT Pilot context chain for a project: user-global ~/.pilot/GPT.md, repository AGENTS.md, and repository GPT.md, with explicit precedence and provenance. Runtime/system security remains non-overridable.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Project directory; defaults to the workspace root.' },
+          include_content: { type: 'boolean', description: 'Include bounded source contents and merged context; defaults to true.' },
+          max_bytes_per_source: { type: 'integer', minimum: 1024, maximum: 131072, description: 'Maximum bytes loaded from each context file; defaults to 65536.' },
+        },
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      handler: async (args) => {
+        const directory = await listDirectory({ ...access, directoryPath: optionalString(args, 'path') ?? '.', maxEntries: 1, includeHidden: false });
+        const bundle = await loadPilotContext(directory.path, {
+          pilotHome: context.pilotHome,
+          maxBytesPerSource: optionalInteger(args, 'max_bytes_per_source'),
+          boundaryRoot: context.unrestricted ? undefined : context.root,
+        });
+        if (optionalBoolean(args, 'include_content') === false) {
+          return { ...bundle, sources: bundle.sources.map(({ content: _content, ...source }) => source), merged: undefined };
+        }
+        return bundle;
+      },
+    },
+    {
+      name: 'context_explain',
+      description: 'Explain where Pilot context came from and, for an optional literal query, show matching lines plus the highest-priority matching context source.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Project directory; defaults to the workspace root.' },
+          query: { type: 'string', description: 'Optional literal text to trace to context source lines.' },
+        },
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      handler: async (args) => {
+        const directory = await listDirectory({ ...access, directoryPath: optionalString(args, 'path') ?? '.', maxEntries: 1, includeHidden: false });
+        const bundle = await loadPilotContext(directory.path, { pilotHome: context.pilotHome, boundaryRoot: context.unrestricted ? undefined : context.root });
+        return explainPilotContext(bundle, optionalString(args, 'query'));
+      },
+    },
+    {
       name: 'project_snapshot',
-      description: 'Read a bounded coding-oriented project snapshot in one call: Git status, top-level tree, package/scripts, project type hints, and common agent instruction files.',
+      description: 'Read a bounded coding-oriented project snapshot in one call: Git status, top-level tree, package/scripts, project type hints, common agent instruction files, and Pilot GPT.md context provenance.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -596,7 +641,7 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
 
         const instructions: unknown[] = [];
         if (include.includes('instructions')) {
-          for (const relativePath of ['AGENTS.md', 'CLAUDE.md', path.join('.github', 'copilot-instructions.md')]) {
+          for (const relativePath of ['AGENTS.md', 'GPT.md', 'CLAUDE.md', path.join('.github', 'copilot-instructions.md')]) {
             try {
               const read = await readMachineFile({ ...access, filePath: path.join(directory.path, relativePath), maxLines: 400, maxBytes: 64 * 1024 });
               instructions.push({ path: read.path, sha256: read.sha256, truncated: read.truncated, content: read.content });
@@ -613,7 +658,10 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
           ...(include.includes('tree') ? { tree: directory } : {}),
           ...(include.includes('package') ? { package: packageInfo } : {}),
           ...(include.includes('scripts') ? { scripts: (packageInfo?.scripts as Record<string, string> | undefined) ?? {} } : {}),
-          ...(include.includes('instructions') ? { instructions } : {}),
+          ...(include.includes('instructions') ? {
+            instructions,
+            pilotContext: await loadPilotContext(directory.path, { pilotHome: context.pilotHome, maxBytesPerSource: 32 * 1024, boundaryRoot: context.unrestricted ? undefined : context.root }),
+          } : {}),
         };
       },
     },

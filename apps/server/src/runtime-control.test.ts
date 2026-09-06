@@ -196,7 +196,7 @@ test('capability_diff against the live build is clean', { timeout: 180_000 }, as
     assert.deepEqual(diff.added, []);
     assert.deepEqual(diff.removed, []);
     assert.deepEqual(diff.changed, []);
-    assert.ok(diff.live.count >= 53);
+    assert.ok(diff.live.count >= 55);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

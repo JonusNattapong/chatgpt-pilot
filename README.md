@@ -185,6 +185,26 @@ Pilot exposes bounded, structured primitives instead of forcing the model to do 
 
 High-authority operations remain policy/approval gated.
 
+### GPT.md context
+
+Pilot has an explicit context chain for ChatGPT-specific working instructions:
+
+```text
+runtime/system security       # hard guardrail; context files cannot weaken it
+        ↓
+~/.pilot/GPT.md               # user-global Pilot defaults
+        ↓
+<repo>/AGENTS.md              # shared repository engineering guidance
+        ↓
+<repo>/GPT.md                 # repository-local ChatGPT/Pilot guidance
+        ↓
+current user request          # highest task-level intent within guardrails
+```
+
+`pnpm pilot setup` creates `~/.pilot/GPT.md` once when it is missing and never overwrites an existing user file. Repository `GPT.md` files are normal tracked project context; `AGENTS.md` remains the shared cross-agent engineering contract.
+
+Use `context_info` to inspect the loaded sources and merged context. Use `context_explain` with an optional literal query to trace a rule back to its source and effective priority. In workspace-restricted mode, repository context discovery never walks above the configured workspace boundary.
+
 ### ThinkForge
 
 ThinkForge provides structured reasoning operations for work that benefits from more than a single generation pass:

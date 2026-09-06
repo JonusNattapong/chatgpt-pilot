@@ -21,6 +21,7 @@ chatgpt-pilot/
 │   └── core/             # Shared contracts & types (@chatgpt-pilot/core)
 ├── skills/               # curated agent skills in markdown format (139 indexed in the current snapshot)
 ├── scripts/              # Platform tunnel and management scripts (.ps1, .sh)
+├── GPT.md                 # Repo-local ChatGPT/Pilot context
 └── .pilot/               # Runtime local directory (audit.ndjson, config.json, memory/)
 ```
 
@@ -49,6 +50,8 @@ When resolving architectural or implementation questions, treat these files as a
 6. `apps/server/src/verification.ts` — Pre-commit verification gates and worktree integrity checks.
 7. Test suites (`*.test.ts`) — Executable behavioral contracts.
 8. `README.md`, `README.th.md`, and `docs/architecture.md` — Human-facing specifications.
+
+For ChatGPT/Pilot working context, load `~/.pilot/GPT.md` first, then repository `AGENTS.md`, then repository `GPT.md`. The current user request is the highest task-level intent. None of these context layers may weaken runtime/system security, access boundaries, or approval policy.
 
 ---
 

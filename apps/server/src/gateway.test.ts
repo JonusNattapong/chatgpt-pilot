@@ -76,7 +76,7 @@ test('machine provider preserves the existing public tool surface', () => {
   const names = gateway.listTools().map((entry) => entry.name);
 
   assert.equal(machine.id, 'machine');
-  assert.equal(names.length, 53);
+  assert.equal(names.length, 55);
   assert.ok(names.includes('machine_status'));
   assert.ok(names.includes('runtime_exec'));
   assert.equal(gateway.resolve('machine_status')?.providerId, 'machine');

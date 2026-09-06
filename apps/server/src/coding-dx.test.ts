@@ -47,9 +47,13 @@ test('project_snapshot returns package, scripts, tree, project type, and bounded
     await mkdir(path.join(root, 'src'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'snapshot-fixture', version: '1.2.3', scripts: { build: 'tsc', test: 'node --test' } }, null, 2), 'utf8');
     await writeFile(path.join(root, 'AGENTS.md'), '# Instructions\nKeep changes bounded.\n', 'utf8');
+    await writeFile(path.join(root, 'GPT.md'), '# Pilot\nUse project context.\n', 'utf8');
+    const pilotHome = path.join(root, '.test-pilot-home');
+    await mkdir(pilotHome, { recursive: true });
+    await writeFile(path.join(pilotHome, 'GPT.md'), '# Global\nPrefer structured tools.\n', 'utf8');
     await writeFile(path.join(root, 'src', 'index.ts'), 'export const ok = true;\n', 'utf8');
 
-    const specs = createToolSpecs({ root, unrestricted: false, maxTimeoutMs: 60_000 });
+    const specs = createToolSpecs({ root, unrestricted: false, maxTimeoutMs: 60_000, pilotHome });
     const snapshotTool = specs.find((spec) => spec.name === 'project_snapshot')!;
     const snapshot = await snapshotTool.handler({ include: ['tree', 'package', 'scripts', 'instructions'] }) as {
       projectTypes: string[];
@@ -57,6 +61,7 @@ test('project_snapshot returns package, scripts, tree, project type, and bounded
       package: { name: string; version: string };
       scripts: Record<string, string>;
       instructions: Array<{ path: string; content: string; sha256: string }>;
+      pilotContext: { sources: Array<{ id: string; exists: boolean; content?: string }> };
     };
 
     assert.deepEqual(snapshot.projectTypes, ['node']);
@@ -64,9 +69,11 @@ test('project_snapshot returns package, scripts, tree, project type, and bounded
     assert.equal(snapshot.package.name, 'snapshot-fixture');
     assert.equal(snapshot.package.version, '1.2.3');
     assert.equal(snapshot.scripts.build, 'tsc');
-    assert.equal(snapshot.instructions.length, 1);
+    assert.equal(snapshot.instructions.length, 2);
     assert.match(snapshot.instructions[0]!.content, /Keep changes bounded/);
     assert.match(snapshot.instructions[0]!.sha256, /^[a-f0-9]{64}$/);
+    assert.equal(snapshot.pilotContext.sources.find((source) => source.id === 'global_gpt')?.exists, true);
+    assert.equal(snapshot.pilotContext.sources.find((source) => source.id === 'repo_gpt')?.exists, true);
   });
 });
 

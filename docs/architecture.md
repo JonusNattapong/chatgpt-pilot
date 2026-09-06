@@ -56,6 +56,14 @@ ChatGPT Pilot functions as a unified gateway and capability fabric bridging AI c
 - **Timesteps (`timesteps/`)**: Daily/monthly journals (`YYYY-MM-DD.md`) enabling temporal recall (`memory_recall_time`).
 - **Self-Seeding**: Automatically seeds from `packages/memory/seed/` or external backups when starting in a fresh environment.
 
+### 2.5 Hierarchical ChatGPT Context (`GPT.md`)
+- `~/.pilot/GPT.md` provides user-global ChatGPT/Pilot defaults and is initialized once by `pilot setup` without overwriting existing content.
+- `<repo>/AGENTS.md` remains shared repository engineering guidance for all coding agents.
+- `<repo>/GPT.md` provides repository-local ChatGPT/Pilot guidance and may specialize lower-priority context.
+- `context_info` returns bounded context sources, hashes, precedence, and merged content; `context_explain` traces literal rules to source lines and the highest-priority matching source.
+- In workspace mode, repository context discovery is bounded by the configured root and may not walk to parent repositories. The user-global file is the only intentional external context source.
+- Runtime/system policy, access boundaries, and approval requirements are guardrails and cannot be overridden by context files.
+
 ---
 
 ## 3. Runtime Control Plane
@@ -80,6 +88,7 @@ Storage is split into two deterministic layers:
    - `memory/`: Active living memory book (`TOC.md`, `SUMMARY.md`, `chapters/`, `timesteps/`).
 2. **User-Global Storage (`~/.pilot/`)**:
    - Fallback directory when no workspace `.pilot/` directory exists.
+   - `GPT.md`: user-global ChatGPT/Pilot working defaults.
    - Stores global credentials, tunnel control plane DPAPI keys, and global memory.
 
 ---
