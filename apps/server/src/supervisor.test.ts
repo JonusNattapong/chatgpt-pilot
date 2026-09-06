@@ -218,7 +218,7 @@ test('supervisor proxies the real MCP server during normal use', async () => {
   try {
     await client.connect(transport);
     const listed = await client.listTools();
-    assert.equal(listed.tools.length, 49);
+    assert.equal(listed.tools.length, 53);
     const compact = await client.callTool({ name: 'machine_status', arguments: {} });
     assert.doesNotMatch(JSON.stringify(compact), /managedProcesses/);
     const detailed = await client.callTool({ name: 'machine_status', arguments: { detailed: true } });

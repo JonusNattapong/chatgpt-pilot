@@ -82,6 +82,8 @@ const BUILTIN: Record<PolicyProfileName, PolicyConfig> = {
         'git_checkout',
         'git_push',
         'git_publish_paths',
+        'restart_if_stale',
+        'self_update',
         'machine_call',
         'save_image_from_url',
       ],

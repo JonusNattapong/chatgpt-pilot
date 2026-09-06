@@ -626,6 +626,7 @@ async function main(): Promise<void> {
       ok: true,
       version: APP_VERSION,
       build: { ...build, head: headCommit() },
+      manifest: contract.tools,
       contractVersion: CONTRACT_VERSION,
       contractFingerprint: contract.fingerprint,
       root: options.root,

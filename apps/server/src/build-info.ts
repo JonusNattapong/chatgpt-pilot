@@ -30,9 +30,9 @@ export function loadBuildInfo(): BuildInfo {
 }
 
 /** HEAD of the checkout this dist was built from (best-effort, null when unavailable). */
-export function headCommit(): string | null {
+export function headCommit(cwd?: string): string | null {
   try {
-    const repoRoot = path.resolve(here, '..', '..', '..');
+    const repoRoot = cwd ?? path.resolve(here, '..', '..', '..');
     const out = execFileSync('git', ['-C', repoRoot, 'rev-parse', 'HEAD'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],

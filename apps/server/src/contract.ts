@@ -3,7 +3,7 @@ import type { ToolSpec } from './tools.js';
 
 export const CONTRACT_VERSION = 7;
 
-function canonicalize(value: unknown): unknown {
+export function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === 'object') {
     return Object.fromEntries(

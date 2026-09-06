@@ -9,6 +9,7 @@ import { AuditLogger, defaultAuditPath } from './audit.js';
 import { CONTRACT_VERSION, createContractManifest } from './contract.js';
 import { APP_VERSION } from './version.js';
 import { headCommit, loadBuildInfo } from './build-info.js';
+import { diffCapabilities, getRuntimeInfo, restartIfStale, selfUpdate } from './runtime-control.js';
 import { describeError, ToolError } from './errors.js';
 import {
   editMachineFile,
@@ -349,6 +350,34 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
           git: statusDetail,
         };
       },
+    },
+    {
+      name: 'runtime_info',
+      description: 'Read-only control-plane handshake: build commit/HEAD/staleBuild, worker PID/uptime, tunnel ownership, contract fingerprint, capability count, and the last control restart receipt.',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      handler: async () => getRuntimeInfo(specs),
+    },
+    {
+      name: 'capability_diff',
+      description: 'Read-only. Compare the live worker tool surface against a fresh probe of the current build. Returns added/removed/changed tool names and fingerprintMatch. A mismatch means the worker serves a stale build.',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      handler: async () => diffCapabilities(specs, { maxTimeoutMs: context.maxTimeoutMs }),
+    },
+    {
+      name: 'restart_if_stale',
+      description: 'Bounded mutation. Restarts the worker only when it demonstrably serves a stale build (worker-behind-dist or surface mismatch); no-op with a reason when fresh. Returns immediately; the restart lands seconds later, so poll runtime_info for the new worker. Refuses when unsupervised.',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      handler: async () => restartIfStale(specs),
+    },
+    {
+      name: 'self_update',
+      description: 'Privileged autonomous update: requires MCP_ALLOW_SELF_UPDATE=1. Refuses on dirty tree, non-main branch, unpushed commits, divergence, or fetch failure. Otherwise fast-forward-only pull of origin/main, build, full verification, supervised restart, and a post-restart handshake receipt. Returns before the restart lands; poll runtime_info.',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      handler: async () => selfUpdate(),
     },
     {
       name: 'system_info',

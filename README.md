@@ -137,6 +137,19 @@ To check tunnel health, diagnose, restart, or stop:
 `start` is idempotent (no-op when already running here) and refuses to steal
 a live runtime owned by another checkout unless `-Force` / `--force` is given.
 
+### Control plane (self-diagnosis from ChatGPT)
+
+```text
+runtime_info -> stale? no -> continue
+             -> yes -> capability_diff -> restart_if_stale -> runtime_info
+self_update  -> origin/main only, ff-only, build, verify, restart, handshake
+```
+
+`runtime_info` / `capability_diff` are read-only. `restart_if_stale` restarts
+only on proven staleness. `self_update` additionally requires
+`MCP_ALLOW_SELF_UPDATE=1` and refuses dirty trees, non-main branches,
+unpushed commits, and divergence.
+
 ## Core Modules
 
 ### 1. System and Machine Execution (`apps/server`)
