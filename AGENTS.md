@@ -128,3 +128,9 @@ Before completing any task touching execution, filesystem, or transport code, ve
 5. Can a background process outlive its timeout or leak handles?
 6. Are secrets or private keys exposed in logs, error envelopes, or git commits?
 7. Did the tool maintain accurate read-only / destructive MCP annotations?
+
+---
+
+## 8. Self-Extension
+
+When a reusable need is not covered by the current surface, Pilot may extend itself using `docs/self-extension.md` and the templates under `templates/`. Prefer a Skill for reusable procedure/knowledge and a Capability for a reusable structured executable API. Do not create permanent extensions for one-off operations. All capability changes require tests, strict verification, contract/surface checks, and runtime reload when stale; all skill changes require Skill Hub sync and discovery verification.
