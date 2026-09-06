@@ -131,6 +131,16 @@ Before completing any task touching execution, filesystem, or transport code, ve
 
 ---
 
-## 8. Self-Extension
+## 8. Skill & Think Routing
+
+For non-trivial coding work, consult Skill Hub before implementation (`skills_skill_resolve` or `skills_skill_route`) and read the selected skill when it materially affects the workflow. Skip this ceremony for obvious one-line or routine edits.
+
+Use ThinkForge only when the task has meaningful architecture/design trade-offs, unclear constraints, competing approaches, failure-mode analysis, or needs strategic reframing. Routine implementation, formatting, direct bug fixes, and mechanical edits do not require ThinkForge.
+
+Execution remains with Pilot capabilities. After implementation, verify concrete results before reporting completion. When useful, record `skills_skill_feedback` so routing quality improves over time.
+
+---
+
+## 9. Self-Extension
 
 When a reusable need is not covered by the current surface, Pilot may extend itself using `docs/self-extension.md` and the templates under `templates/`. Prefer a Skill for reusable procedure/knowledge and a Capability for a reusable structured executable API. Do not create permanent extensions for one-off operations. All capability changes require tests, strict verification, contract/surface checks, and runtime reload when stale; all skill changes require Skill Hub sync and discovery verification.
