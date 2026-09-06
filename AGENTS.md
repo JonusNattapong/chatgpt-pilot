@@ -144,6 +144,10 @@ Execution remains with Pilot capabilities. After implementation, verify concrete
 
 ---
 
+For multi-step work, use the persistent todo ledger when tracking intent or handoff materially helps. After a verified non-trivial task, call `learning_observe` only when there is a reusable evidence-backed lesson; do not manufacture observations for routine work. Memory candidates may be promoted after thresholds are met. Skill, Capability, and GPT candidates are proposals only and never authorize direct self-modification.
+
+---
+
 ## 9. Self-Extension
 
 When a reusable need is not covered by the current surface, Pilot may extend itself using `docs/self-extension.md` and the templates under `templates/`. Prefer a Skill for reusable procedure/knowledge and a Capability for a reusable structured executable API. Do not create permanent extensions for one-off operations. All capability changes require tests, strict verification, contract/surface checks, and runtime reload when stale; all skill changes require Skill Hub sync and discovery verification.

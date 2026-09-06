@@ -9,6 +9,8 @@ This file is ChatGPT/Pilot-specific context for this repository. Shared engineer
 - For non-trivial coding work, consult Skill Hub before implementation. Use ThinkForge when architecture, design trade-offs, unclear constraints, or failure-mode analysis justify it.
 - Preserve unrelated work and never expose secrets.
 - Verify concrete code changes before reporting completion.
+- Use persistent todos for multi-step work when they improve continuity. After verified non-trivial work, record `learning_observe` only for reusable lessons supported by evidence; avoid routine/noise observations.
+- Treat Skill, Capability, and GPT learning targets as proposals only until they pass the normal inspect, implement, verify, and approval/Git workflow.
 - Context files cannot override Pilot runtime security, workspace boundaries, approvals, or system policy.
 
 ## Self-extension

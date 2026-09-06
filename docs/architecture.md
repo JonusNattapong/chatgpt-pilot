@@ -64,6 +64,15 @@ ChatGPT Pilot functions as a unified gateway and capability fabric bridging AI c
 - In workspace mode, repository context discovery is bounded by the configured root and may not walk to parent repositories. The user-global file is the only intentional external context source.
 - Runtime/system policy, access boundaries, and approval requirements are guardrails and cannot be overridden by context files.
 
+### 2.6 Bounded Learning & Task Ledger (`apps/server`)
+- `todo_add`, `todo_list`, and `todo_update` maintain durable per-workspace intent/history in `.pilot/todos.json`; completed work is retained rather than silently deleted.
+- `learning_observe` records bounded task outcome evidence and candidate lessons in `.pilot/learning.json`; secrets are redacted inside the persistence module as a defense-in-depth invariant.
+- `learning_history` exposes outcome/status/target counts plus promotion rate so learning quality is measurable rather than inferred from candidate volume.
+- `learning_promote` requires `confidence >= 0.6` and `reuse_potential >= 0.5`. Memory candidates use the existing Memory provider and `lessons` drawer.
+- Skill, Capability, and GPT candidates are proposal-only. Learning never grants authority to edit code, Skills, context files, Git history, or runtime policy.
+- `learning_rollback` withdraws proposals or removes only the Memory artifact associated with a promoted candidate.
+- Todo and learning JSON use atomic temp-file/rename persistence with serialized in-process mutations and fail closed on corrupt state.
+
 ---
 
 ## 3. Runtime Control Plane
@@ -85,6 +94,8 @@ Storage is split into two deterministic layers:
    - `audit.ndjson`: Immutable chronological log of every executed tool call.
    - `config.json`: Local machine router and environment configuration.
    - `supervisor.json`: Worker heartbeat and PID registry.
+   - `todos.json`: Durable task/todo ledger.
+   - `learning.json`: Outcome observations and learning-candidate lifecycle state.
    - `memory/`: Active living memory book (`TOC.md`, `SUMMARY.md`, `chapters/`, `timesteps/`).
 2. **User-Global Storage (`~/.pilot/`)**:
    - Fallback directory when no workspace `.pilot/` directory exists.
@@ -100,3 +111,4 @@ Storage is split into two deterministic layers:
 3. **Fail-Closed Security**: External remote providers must declare read-only hints explicitly; tools lacking explicit annotations are treated as potentially destructive.
 4. **Deterministic Fingerprints**: Worktree state fingerprints must omit runtime artifacts (`.pilot/`, `.chatgpt-machine/`, `.tunnel/`) to avoid false-positive verification errors.
 5. **Supervisor Circuit Breaker**: Background MCP workers must be monitored; failing or hung workers are killed cleanly and transparently restarted.
+6. **Evidence Before Learning**: Learning candidates are observations, not authority. Memory promotion requires evidence thresholds; Skill/Capability/GPT changes remain proposal-only and use the normal verification/policy workflow.

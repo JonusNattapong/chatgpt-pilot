@@ -54,6 +54,8 @@ import { createMachineRoutingSpecs } from './machine-router.js';
 import { PersistentIpythonRuntime, type RuntimeCapability } from './runtime-exec.js';
 import { osintFetch, osintSearch, type OsintScope } from './osint.js';
 import { explainPilotContext, loadPilotContext } from './context.js';
+import { TodoLedger, createTodoToolSpecs } from './todo-tools.js';
+import { createLearningToolSpecs } from './learning-tools.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -234,6 +236,15 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
   const open = context.unrestricted;
   const audit = context.audit ?? new AuditLogger(defaultAuditPath(context.root));
   const runtimeManager = context.runtimeManager ?? new PersistentIpythonRuntime(context.root);
+  const todoLedger = new TodoLedger(context.root);
+  const invokeLearningExternal = async (name: 'memory_drawer_put' | 'memory_drawer_delete', args: Record<string, unknown>) => {
+    const spec = context.runtimeCapabilities?.().find((candidate) => candidate.name === name);
+    if (!spec) throw new ToolError('DEPENDENCY_MISSING', `${name} is unavailable because the Memory provider is not connected.`, 'Start Pilot with the Memory provider enabled, then retry.');
+    const decision = context.runtimePolicyCheck?.(spec, args) ?? { allowed: true, requiresApproval: false };
+    if (!decision.allowed) throw new ToolError('POLICY_DENIED', decision.reason ?? `Capability ${name} was denied by policy.`);
+    if (decision.requiresApproval) throw new ToolError('APPROVAL_REQUIRED', `Nested capability ${name} requires approval.`, `Call ${name} directly or use a policy that permits bounded memory promotion without an additional approval.`);
+    return spec.handler(args);
+  };
 
   const specs: ToolSpec[] = [
     {
@@ -1330,6 +1341,9 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
       },
     },
   ];
+
+  specs.push(...createTodoToolSpecs(context.root, todoLedger));
+  specs.push(...createLearningToolSpecs(context.root, todoLedger, invokeLearningExternal));
 
   if (context.osintEnabled) {
     specs.push({

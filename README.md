@@ -205,6 +205,26 @@ current user request          # highest task-level intent within guardrails
 
 Use `context_info` to inspect the loaded sources and merged context. Use `context_explain` with an optional literal query to trace a rule back to its source and effective priority. In workspace-restricted mode, repository context discovery never walks above the configured workspace boundary.
 
+### Bounded learning & todos
+
+Pilot can keep a persistent workspace task ledger and learn from verified outcomes without silently rewriting itself:
+
+```text
+todo_add / todo_update
+        ↓
+execute + verify
+        ↓
+learning_observe
+        ↓
+learning candidate
+   ├─ memory      → threshold → promote / rollback
+   ├─ skill       → proposal only
+   ├─ capability  → proposal only
+   └─ gpt         → proposal only
+```
+
+`todo_add`, `todo_list`, and `todo_update` persist under `.pilot/todos.json`. `learning_observe`, `learning_history`, `learning_promote`, and `learning_rollback` persist evidence and candidates under `.pilot/learning.json`. High-confidence reusable memory lessons can be promoted into the existing Memory `lessons` drawer; Skill, Capability, and GPT changes remain proposals and must use the normal inspected, verified workflow. See `docs/learning-loop.md` for thresholds, metrics, storage, and guardrails.
+
 ### ThinkForge
 
 ThinkForge provides structured reasoning operations for work that benefits from more than a single generation pass:

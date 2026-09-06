@@ -165,6 +165,26 @@ runtime/system security       # กฎบังคับ ห้าม GPT.md ล
 
 ใช้ `context_info` เพื่อดูว่า Pilot โหลดไฟล์ใดอยู่ และใช้ `context_explain` เพื่อตามว่ากติกาหรือข้อความหนึ่งมาจาก source ไหน ในโหมด workspace ระบบจะไม่ไต่ขึ้นไปอ่าน `GPT.md` หรือ `AGENTS.md` นอกขอบเขตที่กำหนด
 
+#### Todo และ Learning Loop แบบควบคุมได้
+
+Pilot มี task ledger ที่อยู่ข้ามการ restart และเรียนรู้จากผลลัพธ์ที่มีหลักฐานได้ โดยไม่เปิดสิทธิ์ให้แก้ตัวเองเงียบ ๆ:
+
+```text
+todo_add / todo_update
+        ↓
+ลงมือ + verify
+        ↓
+learning_observe
+        ↓
+learning candidate
+   ├─ memory      → ผ่าน threshold → promote / rollback
+   ├─ skill       → proposal เท่านั้น
+   ├─ capability  → proposal เท่านั้น
+   └─ gpt         → proposal เท่านั้น
+```
+
+`todo_add`, `todo_list`, `todo_update` เก็บสถานะใน `.pilot/todos.json` ส่วน `learning_observe`, `learning_history`, `learning_promote`, `learning_rollback` เก็บ outcome, evidence และ candidate ใน `.pilot/learning.json` บทเรียนที่มีหลักฐานพอสามารถ promote เข้า Memory drawer `lessons` เดิมได้ แต่การเปลี่ยน Skill, Capability หรือ `GPT.md` จะได้เพียง proposal และต้องผ่าน workflow ตรวจสอบ/แก้/verify ตามปกติ รายละเอียดอยู่ที่ `docs/learning-loop.md`
+
 ### 2. ThinkForge (`packages/thinkforge`)
 
 ชุดเครื่องมือสำหรับคิดให้เป็นระบบก่อนลงมือแก้ปัญหาหรือเขียนโค้ด:
@@ -206,6 +226,10 @@ Skill Hub จัดการทักษะ 139 รายการใน `skills
 |---|---|---|
 | `context_info` | ดูลำดับและเนื้อหา GPT.md / AGENTS.md ที่ Pilot โหลดอยู่ | `path`, `include_content` |
 | `context_explain` | ตามที่มาของกติกาหรือข้อความใน context พร้อมลำดับความสำคัญ | `path`, `query` |
+| `todo_add` / `todo_list` / `todo_update` | เก็บและติดตามงานแบบ persistent ต่อ workspace | `title`, `status`, `priority`, `tags` |
+| `learning_observe` | บันทึก outcome, evidence และ candidate lesson | `task`, `outcome`, `evidence`, `lessons` |
+| `learning_history` | ดู candidate พร้อม metrics ของ outcome/status/target | `status`, `target`, `limit` |
+| `learning_promote` / `learning_rollback` | promote/ย้อนกลับบทเรียน; Skill/Capability/GPT เป็น proposal-only | `candidate_id` |
 | `read_file` | อ่านเนื้อหาไฟล์แบบจำกัดขนาด พร้อมเลขบรรทัด | `path`, `offset`, `limit`, `expected_sha256` |
 | `write_file` | เขียนหรือสร้างไฟล์ใหม่ พร้อมระบบป้องกันการเขียนทับ | `path`, `content`, `overwrite`, `expected_sha256` |
 | `edit_file` | แก้ไขบล็อกข้อความแบบเจาะจง | `path`, `edits`, `expected_sha256` |
