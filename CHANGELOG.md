@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Features
 
+- add self-extension templates (`73cbbae`)
+- consolidate Pilot setup and control center (`cdf1634`)
+- MCP control plane (runtime_info, capability_diff, restart_if_stale, self_update) (`069c8f1`)
+- capability/version handshake and stale-build detection (`b9826dd`)
+
+### 📚 Documentation
+
+- rewrite README around Pilot CLI workflow (`3784581`)
+- polish Thai documentation (`2e741ce`)
+- rewrite Thai README for clarity (`df4e7ed`)
+- sync runtime and capability documentation (`853074d`)
+
+### 🧹 Chores & Maintenance
+
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`379f8de`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`eeb03ae`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`9cfafff`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`6f88b62`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`851d252`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`d3344ac`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`8737978`)
+
+## [1.0.0] - 2026-09-06
+
+### ✨ Features
+
 - consolidate Pilot setup and control center (`cdf1634`)
 - MCP control plane (runtime_info, capability_diff, restart_if_stale, self_update) (`069c8f1`)
 - capability/version handshake and stale-build detection (`b9826dd`)
