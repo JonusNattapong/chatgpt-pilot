@@ -90,6 +90,30 @@ if ($missing.Count -gt 0) { Add-Result 'Build freshness' 'FAIL' ("missing dist: 
 elseif ($stale.Count -gt 0) { Add-Result 'Build freshness' 'FAIL' ("stale: " + ($stale -join ', ') + " - run 'pnpm build'") }
 else { Add-Result 'Build freshness' 'PASS' 'dist newer than src' }
 
+# 3b. Build commit: dist must be built from the current HEAD ------------------
+$distCommit = $null
+try {
+    $built = Get-Content -LiteralPath (Join-Path $projectRoot 'apps\server\dist\build-info.json') -Raw | ConvertFrom-Json
+    if ($built.commit) { $distCommit = [string]$built.commit }
+} catch { }
+$headCommit = $null
+try {
+    $headCommit = (& git -C $projectRoot rev-parse HEAD 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0) { $headCommit = $null }
+} catch { }
+if (-not $distCommit) { Add-Result 'Build commit' 'WARN' 'no build-info (rebuild with pnpm build)' }
+elseif (-not $headCommit) { Add-Result 'Build commit' 'WARN' "dist built from $($distCommit.Substring(0,7)) (HEAD unknown)" }
+elseif ($distCommit -eq $headCommit) { Add-Result 'Build commit' 'PASS' ("dist == HEAD ($($headCommit.Substring(0,7)))") }
+else { Add-Result 'Build commit' 'FAIL' ("dist $($distCommit.Substring(0,7)) != HEAD $($headCommit.Substring(0,7)) - run 'pnpm build' + restart") }
+
+# 3c. Worker freshness: the live daemon must serve the current dist -----------
+$claimBuild = $null
+if ($claim -and $claim.buildCommit) { $claimBuild = [string]$claim.buildCommit }
+if (-not $claimBuild) { Add-Result 'Worker freshness' 'WARN' 'no claimed build (start never recorded one)' }
+elseif (-not $distCommit) { Add-Result 'Worker freshness' 'WARN' 'dist build unknown' }
+elseif ($claimBuild -eq $distCommit) { Add-Result 'Worker freshness' 'PASS' ("worker serves dist $($distCommit.Substring(0,7))") }
+else { Add-Result 'Worker freshness' 'FAIL' ("worker built from $($claimBuild.Substring(0,7)), dist is $($distCommit.Substring(0,7)) - restart") }
+
 # 4. Tunnel ------------------------------------------------------------------
 $daemon = Get-DaemonStatus
 if ($daemon -and $daemon.process_running -eq $true -and $daemon.healthy -eq $true -and $daemon.ready -eq $true) {

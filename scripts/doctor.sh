@@ -80,6 +80,21 @@ if [[ -n "${missing// }" ]]; then result 'Build freshness' 'FAIL' "missing dist:
 elif [[ -n "${stale// }" ]]; then result 'Build freshness' 'FAIL' "stale: ${stale}- run 'pnpm build'"
 else result 'Build freshness' 'PASS' 'dist newer than src'; fi
 
+# 3b. Build commit: dist must be built from the current HEAD ------------------
+dist_commit="$(node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).commit||"")}catch(e){}' "${project_root}/apps/server/dist/build-info.json")"
+head_commit="$(git -C "${project_root}" rev-parse HEAD 2>/dev/null || true)"
+if [[ -z "${dist_commit}" ]]; then result 'Build commit' 'WARN' 'no build-info (rebuild with pnpm build)'
+elif [[ -z "${head_commit}" ]]; then result 'Build commit' 'WARN' "dist built from ${dist_commit:0:7} (HEAD unknown)"
+elif [[ "${dist_commit}" == "${head_commit}" ]]; then result 'Build commit' 'PASS' "dist == HEAD (${head_commit:0:7})"
+else result 'Build commit' 'FAIL' "dist ${dist_commit:0:7} != HEAD ${head_commit:0:7} - run 'pnpm build' + restart"; fi
+
+# 3c. Worker freshness: the live daemon must serve the current dist -----------
+claim_build="$(node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).buildCommit||"")}catch(e){}' "${owner_path}")"
+if [[ -z "${claim_build}" ]]; then result 'Worker freshness' 'WARN' 'no claimed build (start never recorded one)'
+elif [[ -z "${dist_commit}" ]]; then result 'Worker freshness' 'WARN' 'dist build unknown'
+elif [[ "${claim_build}" == "${dist_commit}" ]]; then result 'Worker freshness' 'PASS' "worker serves dist ${dist_commit:0:7}"
+else result 'Worker freshness' 'FAIL' "worker built from ${claim_build:0:7}, dist is ${dist_commit:0:7} - restart"; fi
+
 # 4. Tunnel ------------------------------------------------------------------
 status_json=""
 if [[ -x "${client_path}" ]]; then

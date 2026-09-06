@@ -169,12 +169,18 @@ try {
     try {
         $commit = (& git -C $projectRoot rev-parse HEAD 2>$null)
         if ($LASTEXITCODE -ne 0) { $commit = $null }
+        $buildCommit = $null
+        try {
+            $buildInfo = Get-Content -LiteralPath (Join-Path $projectRoot 'apps\server\dist\build-info.json') -Raw | ConvertFrom-Json
+            if ($buildInfo.commit) { $buildCommit = [string]$buildInfo.commit }
+        } catch { }
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ownerPath) | Out-Null
         [ordered]@{
             alias = 'chatgpt-machine'
             owner = $projectRoot
             startedAt = (Get-Date).ToString('o')
             commit = $commit
+            buildCommit = $buildCommit
             supervisor = $supervisorFile
             pid = $null
         } | ConvertTo-Json | Set-Content -LiteralPath $ownerPath -Encoding UTF8

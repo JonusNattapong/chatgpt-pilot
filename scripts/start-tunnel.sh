@@ -133,8 +133,9 @@ mcp_command="node ${supervisor_path} --supervisor-timeout ${supervisor_timeout} 
 # Claim ownership (mirrors start-tunnel.ps1 runtime-owner.json).
 mkdir -p "${project_root}/.tunnel"
 commit="$(git -C "${project_root}" rev-parse HEAD 2>/dev/null || true)"
+build_commit="$(node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).commit||"")}catch(e){}' "${project_root}/apps/server/dist/build-info.json")"
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-printf '{\n  "alias": "chatgpt-machine",\n  "owner": "%s",\n  "startedAt": "%s",\n  "commit": "%s",\n  "supervisor": "%s",\n  "pid": null\n}\n' "${project_root}" "${started_at}" "${commit}" "${supervisor_path}" > "${owner_path}"
+printf '{\n  "alias": "chatgpt-machine",\n  "owner": "%s",\n  "startedAt": "%s",\n  "commit": "%s",\n  "buildCommit": "%s",\n  "supervisor": "%s",\n  "pid": null\n}\n' "${project_root}" "${started_at}" "${commit}" "${build_commit}" "${supervisor_path}" > "${owner_path}"
 CONTROL_PLANE_API_KEY="${runtime_key}" "${client_path}" runtimes connect \
   --alias chatgpt-machine \
   --admin-profile default \

@@ -37,6 +37,7 @@ import { createRemoteMcpProvider } from './remote-provider.js';
 import { StdioMcpAdapter } from './stdio-mcp-adapter.js';
 import { IdempotencyStore } from './idempotency.js';
 import { APP_VERSION } from './version.js';
+import { headCommit, loadBuildInfo } from './build-info.js';
 
 interface Options {
   root: string;
@@ -620,9 +621,11 @@ async function main(): Promise<void> {
   if (options.check) {
     const specs = runtime.gateway.listTools();
     const contract = createContractManifest([...specs]);
+    const build = loadBuildInfo();
     process.stdout.write(JSON.stringify({
       ok: true,
       version: APP_VERSION,
+      build: { ...build, head: headCommit() },
       contractVersion: CONTRACT_VERSION,
       contractFingerprint: contract.fingerprint,
       root: options.root,

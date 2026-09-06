@@ -8,6 +8,7 @@ import type { Tool } from '@modelcontextprotocol/server';
 import { AuditLogger, defaultAuditPath } from './audit.js';
 import { CONTRACT_VERSION, createContractManifest } from './contract.js';
 import { APP_VERSION } from './version.js';
+import { headCommit, loadBuildInfo } from './build-info.js';
 import { describeError, ToolError } from './errors.js';
 import {
   editMachineFile,
@@ -315,6 +316,9 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
         }
 
         const contract = createContractManifest(specs);
+        const build = loadBuildInfo();
+        const head = headCommit();
+        const staleBuild = build.commit !== null && head !== null && build.commit !== head;
         const [git, ripgrep, bash, powershell] = await Promise.all([
           probeVersion('git', ['--version']),
           probeVersion('rg', ['--version']),
@@ -327,6 +331,7 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
             version: APP_VERSION,
             contractVersion: CONTRACT_VERSION,
             contractFingerprint: contract.fingerprint,
+            build: { ...build, head, staleBuild },
             supervised: process.env.MCP_SUPERVISED === '1',
             workerGeneration: process.env.MCP_WORKER_GENERATION ? Number(process.env.MCP_WORKER_GENERATION) : undefined,
           },
