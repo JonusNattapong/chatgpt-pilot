@@ -29,6 +29,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@chatgpt-pilot/flow':
+        specifier: workspace:*
+        version: link:../../packages/flow
       '@modelcontextprotocol/client':
         specifier: ^2.0.0
         version: 2.0.0
@@ -63,6 +66,15 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@26.4.1)(tsx@4.23.13)(yaml@2.9.0)
+
+  packages/flow:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
 
   packages/mcp-server:
     dependencies:

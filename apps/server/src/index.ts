@@ -33,6 +33,7 @@ import type { ToolSpec } from './tools.js';
 import { ToolGateway, type ToolProvider } from './gateway.js';
 import { createMachineProvider } from './machine-provider.js';
 import { createHybridProvider } from './hybrid-provider.js';
+import { createFlowProvider } from './flow-provider.js';
 import { createRemoteMcpProvider } from './remote-provider.js';
 import { StdioMcpAdapter } from './stdio-mcp-adapter.js';
 import { IdempotencyStore } from './idempotency.js';
@@ -340,6 +341,15 @@ async function buildRuntime(
     await Promise.allSettled(closeProviders.map((close) => close()));
     throw error;
   }
+
+  const executionCapabilities = capabilityProviders.flatMap((provider) => [...provider.tools()]);
+  const flowProvider = createFlowProvider({
+    root: options.root,
+    capabilities: () => executionCapabilities,
+    policyCheck: (spec, args) => evaluatePolicy(policy, spec, args, options.root),
+  });
+  capabilityProviders.push(flowProvider);
+  closeProviders.push(() => flowProvider.close());
 
   externalCapabilities = capabilityProviders.slice(1).flatMap((provider) => [...provider.tools()]);
   const capabilities = capabilityProviders.flatMap((provider) => [...provider.tools()]);

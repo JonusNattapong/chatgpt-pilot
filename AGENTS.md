@@ -17,6 +17,7 @@ chatgpt-pilot/
 │   │   └── src/          # BrainBook manager, Stdio MCP server, and CLI
 │   ├── thinkforge/       # Cognitive scaffolds & problem reframing (@chatgpt-pilot/thinkforge)
 │   ├── skill-hub/        # Curated skills registry & execution gateway (@chatgpt-pilot/skill-hub)
+│   ├── flow/             # Durable DAG runs, checkpoints, resume, and parallel scheduling (@chatgpt-pilot/flow)
 │   ├── mcp-server/       # Minimal MCP adapter (@chatgpt-pilot/mcp-server)
 │   └── core/             # Shared contracts & types (@chatgpt-pilot/core)
 ├── skills/               # curated agent skills in markdown format (139 indexed in the current snapshot)
@@ -27,14 +28,15 @@ chatgpt-pilot/
 
 ---
 
-## 2. Capability Architecture & The Four Pillars
+## 2. Capability Architecture & The Five Pillars
 
-When interacting with this codebase, remember the 4 capability providers federated by `apps/server`:
+When interacting with this codebase, remember the 5 capability providers federated by `apps/server`:
 
 1. **System & Machine (`apps/server`)**: Low-level filesystem, background process orchestration, verified Git commits, and stateful Python (`toolpy`).
 2. **ThinkForge (`packages/thinkforge`)**: Structured cognitive accelerators such as `think_analyze_problem`, `think_reframe_problem`, `think_challenge_idea`, `think_synthesize_ideas`, and `think_experiment_design`.
 3. **Skill Hub (`packages/skill-hub`)**: Dynamic discovery, routing, composition, feedback, and on-demand reading across 139 currently indexed skills in `skills/`.
 4. **Living Memory Book (`packages/memory`)**: Pure Markdown second brain indexed by Chapters, Subtopics, Timesteps, and Memory Drawers.
+5. **Flow (`packages/flow`)**: Durable DAG orchestration with checkpoints, resume, bounded concurrency, and fail-closed recovery for uncertain side effects. Ready steps may execute in parallel, including edits; use optimistic file preconditions instead of global edit locks.
 
 ---
 

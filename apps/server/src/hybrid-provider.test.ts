@@ -29,6 +29,7 @@ test('capability registry groups hidden primitives without exposing handlers', a
       spec('thinkforge_challenge_idea'),
       spec('skills_skill_search'),
       spec('memory_recall'),
+      spec('flow_create', false),
       spec('runtime_exec', false),
     ],
   });
@@ -42,8 +43,9 @@ test('capability registry groups hidden primitives without exposing handlers', a
       { id: 'think', description: 'Reasoning accelerators supplied by ThinkForge-compatible capability providers.', tools: ['thinkforge_challenge_idea'] },
       { id: 'skills', description: 'Reusable procedures and workflow knowledge supplied by Skill Hub-compatible providers.', tools: ['skills_skill_search'] },
       { id: 'memory', description: 'Persistent recall and write-back supplied by memory capability providers.', tools: ['memory_recall'] },
+      { id: 'flow', description: 'Durable DAG orchestration, checkpoints, resume, and bounded parallel capability execution.', tools: ['flow_create'] },
     ],
-    capabilityCount: 4,
+    capabilityCount: 5,
   });
 });
 

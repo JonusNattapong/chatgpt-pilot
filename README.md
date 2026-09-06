@@ -225,6 +225,12 @@ learning candidate
 
 `todo_add`, `todo_list`, and `todo_update` persist under `.pilot/todos.json`. `learning_observe`, `learning_history`, `learning_promote`, and `learning_rollback` persist evidence and candidates under `.pilot/learning.json`. High-confidence reusable memory lessons can be promoted into the existing Memory `lessons` drawer; Skill, Capability, and GPT changes remain proposals and must use the normal inspected, verified workflow. See `docs/learning-loop.md` for thresholds, metrics, storage, and guardrails.
 
+### Flow
+
+Flow turns individual capabilities into durable DAG runs. Independent ready steps execute concurrently up to a per-run limit (default 4), checkpoints and events persist under `.pilot/flow/runs.db`, and interrupted running steps become `uncertain` instead of being retried blindly. File edits are not globally serialized: planners can run independent `edit_file` steps in parallel and use `expected_sha256` for optimistic concurrency so conflicts fail rather than silently overwrite another edit.
+
+Core capabilities: `flow_create`, `flow_get`, `flow_run`, `flow_resume`, `flow_cancel`, and `flow_events`. Flow is mounted inside the same ChatGPT Pilot MCP runtime; it is not a second MCP server or tunnel.
+
 ### ThinkForge
 
 ThinkForge provides structured reasoning operations for work that benefits from more than a single generation pass:
@@ -259,7 +265,8 @@ ChatGPT
         ├── coding
         ├── think
         ├── skills
-        └── memory
+        ├── memory
+        └── flow
 ```
 
 This lets ChatGPT compose several low-level operations inside one controlled execution rather than spending a separate MCP round trip on every primitive.

@@ -3,7 +3,7 @@ import type { ToolProvider } from './gateway.js';
 import type { ToolSpec } from './tools.js';
 
 export interface CapabilityGroup {
-  id: 'coding' | 'think' | 'skills' | 'memory';
+  id: 'coding' | 'think' | 'skills' | 'memory' | 'flow';
   description: string;
   tools: string[];
 }
@@ -18,19 +18,21 @@ const GROUPS: Array<Omit<CapabilityGroup, 'tools'>> = [
   { id: 'think', description: 'Reasoning accelerators supplied by ThinkForge-compatible capability providers.' },
   { id: 'skills', description: 'Reusable procedures and workflow knowledge supplied by Skill Hub-compatible providers.' },
   { id: 'memory', description: 'Persistent recall and write-back supplied by memory capability providers.' },
+  { id: 'flow', description: 'Durable DAG orchestration, checkpoints, resume, and bounded parallel capability execution.' },
 ];
 
 function classify(name: string): CapabilityGroup['id'] {
   if (name.startsWith('thinkforge_') || name.startsWith('think_')) return 'think';
   if (name.startsWith('skills_') || name.startsWith('skill_')) return 'skills';
   if (name.startsWith('memory_') || name.startsWith('ourbook_')) return 'memory';
+  if (name.startsWith('flow_')) return 'flow';
   return 'coding';
 }
 
 function registrySpec(capabilities: readonly ToolSpec[]): ToolSpec {
   return {
     name: 'capability_registry',
-    description: 'Inspect the capabilities available behind toolpy, grouped as coding, think, skills, and memory. Returns metadata only and does not execute a capability.',
+    description: 'Inspect the capabilities available behind toolpy, grouped as coding, think, skills, memory, and flow. Returns metadata only and does not execute a capability.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -41,7 +43,7 @@ function registrySpec(capabilities: readonly ToolSpec[]): ToolSpec {
     handler: async (args) => {
       const requested = args.group;
       if (requested !== undefined && (typeof requested !== 'string' || !GROUPS.some((group) => group.id === requested))) {
-        throw new ToolError('INVALID_ARGUMENT', '"group" must be one of: coding, think, skills, memory.');
+        throw new ToolError('INVALID_ARGUMENT', '"group" must be one of: coding, think, skills, memory, flow.');
       }
       const groups = GROUPS
         .filter((group) => requested === undefined || group.id === requested)
