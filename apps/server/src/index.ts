@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { constants as fsConstants, existsSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -38,7 +38,8 @@ import { StdioMcpAdapter } from './stdio-mcp-adapter.js';
 import { IdempotencyStore } from './idempotency.js';
 import { APP_VERSION } from './version.js';
 import { headCommit, loadBuildInfo } from './build-info.js';
-
+import { CONTROL_CENTER_HTML } from './control-center.js';
+import { listManagedProcesses } from './process-tools.js';
 interface Options {
   root: string;
   dangerouslyOpenMachine: boolean;
@@ -568,8 +569,57 @@ function hasValidBearerToken(req: IncomingMessage, expectedToken?: string): bool
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-const AUDIT_UI = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="5"><title>ChatGPT Machine MCP</title><style>body{font:14px ui-monospace,monospace;background:#101319;color:#dbe4f0;margin:2rem}h1{font:600 22px system-ui}table{width:100%;border-collapse:collapse}td,th{padding:.55rem;border-bottom:1px solid #293241;text-align:left}.success{color:#71d99e}.error{color:#ff7b86}</style></head><body><h1>ChatGPT Machine MCP Â· recent calls</h1><table><thead><tr><th>Time</th><th>Tool</th><th>Decision</th><th>Status</th><th>Duration</th></tr></thead><tbody id="rows"></tbody></table><script>fetch('/ui/audit').then(r=>r.json()).then(({records})=>{rows.innerHTML=records.reverse().map(x=>'<tr><td>'+x.timestamp+'</td><td>'+x.tool+'</td><td>'+x.decision+'</td><td class="'+x.status+'">'+x.status+'</td><td>'+x.durationMs+' ms</td></tr>').join('')}).catch(e=>rows.innerHTML='<tr><td colspan=5>'+e+'</td></tr>')</script></body></html>`;
+async function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += value.length;
+    if (total > maxBytes) throw new ToolError('INVALID_ARGUMENT', 'Request body is too large.');
+    chunks.push(value);
+  }
+  if (!chunks.length) return {};
+  const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new ToolError('INVALID_ARGUMENT', 'Request body must be a JSON object.');
+  return parsed as Record<string, unknown>;
+}
 
+function hasSameOrigin(req: IncomingMessage, options: Options): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    const url = new URL(origin);
+    return url.hostname === options.httpHost && Number(url.port || (url.protocol === 'https:' ? 443 : 80)) === options.httpPort;
+  } catch {
+    return false;
+  }
+}
+
+async function executeUiCapability(runtime: Runtime, name: string, args: Record<string, unknown>, confirmed: boolean): Promise<unknown> {
+  const spec = runtime.capabilities.find((entry) => entry.name === name);
+  if (!spec) throw new ToolError('UNKNOWN_TOOL', `Unknown UI capability: ${name}`);
+  const decision = evaluatePolicy(runtime.policy, spec, args, runtime.options.root);
+  const traceId = randomUUID();
+  const startedAt = Date.now();
+  if (!decision.allowed) {
+    await runtime.audit.write({ traceId, tool: name, policy: runtime.policy.name, decision: 'denied', status: 'error', durationMs: Date.now() - startedAt, args, errorCode: 'POLICY_DENIED' });
+    throw new ToolError('POLICY_DENIED', decision.reason ?? `Tool ${name} was denied by policy.`);
+  }
+  if (decision.requiresApproval && !confirmed) {
+    await runtime.audit.write({ traceId, tool: name, policy: runtime.policy.name, decision: 'approval_required', status: 'input_required', durationMs: Date.now() - startedAt, args });
+    throw new ToolError('APPROVAL_REQUIRED', `Tool ${name} requires confirmation.`);
+  }
+  if (runtime.options.dryRun && !spec.annotations.readOnlyHint) return { dryRun: true, tool: name, wouldExecute: true };
+  try {
+    const value = await spec.handler(args, { approvalGranted: confirmed });
+    await runtime.audit.write({ traceId, tool: name, policy: runtime.policy.name, decision: decision.requiresApproval ? 'approval_required' : 'allowed', status: 'success', durationMs: Date.now() - startedAt, args });
+    return value;
+  } catch (error: unknown) {
+    const described = describeError(error);
+    await runtime.audit.write({ traceId, tool: name, policy: runtime.policy.name, decision: decision.requiresApproval ? 'approval_required' : 'allowed', status: 'error', durationMs: Date.now() - startedAt, args, errorCode: described.code });
+    throw error;
+  }
+}
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
   const policy = loadPolicy(options.policy, options.root);
@@ -661,6 +711,8 @@ async function main(): Promise<void> {
     const handleMcpRequest = toNodeHandler(handler, {
       onerror: (error) => console.error('[chatgpt-machine-mcp] HTTP adapter error:', error.message),
     });
+    const publicSpecs = runtime.gateway.listTools();
+    const uiContract = createContractManifest([...publicSpecs]);
     const httpServer = createServer(async (req, res) => {
       addCorsHeaders(res);
       if (req.method === 'OPTIONS') {
@@ -683,11 +735,96 @@ async function main(): Promise<void> {
         }));
         return;
       }
-      if ((pathname === '/ui' || pathname === '/ui/audit') && !hasValidBearerToken(req, options.httpToken)) {
-        res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' }); res.end(JSON.stringify({ error: 'Unauthorized' })); return;
+      if ((pathname === '/ui' || pathname.startsWith('/ui/')) && !hasValidBearerToken(req, options.httpToken)) {
+        res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
       }
-      if (pathname === '/ui' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); res.end(AUDIT_UI); return; }
-      if (pathname === '/ui/audit' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify({ records: await audit.recent(50) })); return; }
+      if (pathname === '/ui' && req.method === 'GET') {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(CONTROL_CENTER_HTML);
+        return;
+      }
+      if (pathname === '/ui/audit' && req.method === 'GET') {
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify({ records: await audit.recent(50) }));
+        return;
+      }
+      if (pathname === '/ui/runtime' && req.method === 'GET') {
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify({
+          ready: httpReady,
+          version: APP_VERSION,
+          build: { ...loadBuildInfo(), head: headCommit() },
+          contractVersion: CONTRACT_VERSION,
+          contractFingerprint: uiContract.fingerprint,
+          root: options.root,
+          accessMode: options.dangerouslyOpenMachine ? 'UNRESTRICTED_MACHINE' : 'WORKSPACE_ONLY',
+          transport: 'streamable-http',
+          policy: policy.name,
+          approvalMode: options.approvalMode,
+          auditFile: audit.filePath,
+          dryRun: options.dryRun,
+          toolSurface: options.toolSurface,
+          providers: runtime.providerIds,
+          capabilityCount: runtime.capabilities.length,
+          publicToolCount: publicSpecs.length,
+          supervised: process.env.MCP_SUPERVISED === '1',
+          uptimeSeconds: process.uptime(),
+        }));
+        return;
+      }
+      if (pathname === '/ui/capabilities' && req.method === 'GET') {
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify({
+          capabilities: runtime.capabilities.map((spec) => ({
+            name: spec.name,
+            description: spec.description,
+            inputSchema: spec.inputSchema,
+            annotations: spec.annotations,
+          })),
+        }));
+        return;
+      }
+      if (pathname === '/ui/machines' && req.method === 'GET') {
+        const machines = await executeUiCapability(runtime, 'machines_list', {}, false);
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(machines));
+        return;
+      }
+      if (pathname === '/ui/processes' && req.method === 'GET') {
+        const traceId = randomUUID();
+        const startedAt = Date.now();
+        const processes = await listManagedProcesses({ root: options.root, unrestricted: options.dangerouslyOpenMachine });
+        await audit.write({ traceId, tool: 'ui_processes', policy: policy.name, decision: 'allowed', status: 'success', durationMs: Date.now() - startedAt, args: {} });
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify({ processes }));
+        return;
+      }
+      if (pathname === '/ui/action' && req.method === 'POST') {
+        if (!hasSameOrigin(req, options)) {
+          res.writeHead(403, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+          res.end(JSON.stringify({ error: { code: 'ORIGIN_DENIED', message: 'UI actions require a same-origin request.' } }));
+          return;
+        }
+        try {
+          const body = await readJsonBody(req);
+          const name = typeof body.name === 'string' ? body.name : '';
+          const args = body.args && typeof body.args === 'object' && !Array.isArray(body.args) ? body.args as Record<string, unknown> : {};
+          const confirmed = body.confirm === true;
+          const allowed = new Set(['runtime_info', 'capability_diff', 'restart_if_stale', 'self_update', 'machines_list', 'machine_probe', 'process_status', 'read_process_output', 'stop_process']);
+          if (!allowed.has(name)) throw new ToolError('POLICY_DENIED', `UI action ${name || '(missing)'} is not allowed.`);
+          const value = await executeUiCapability(runtime, name, args, confirmed);
+          res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+          res.end(JSON.stringify({ ok: true, value }));
+        } catch (error: unknown) {
+          const described = describeError(error);
+          const status = described.code === 'APPROVAL_REQUIRED' ? 409 : described.code === 'POLICY_DENIED' ? 403 : described.code === 'INVALID_ARGUMENT' ? 400 : 500;
+          res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+          res.end(JSON.stringify({ ok: false, error: described }));
+        }
+        return;
+      }
       if (pathname !== '/mcp') {
         res.writeHead(404, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ error: 'Not found' }));

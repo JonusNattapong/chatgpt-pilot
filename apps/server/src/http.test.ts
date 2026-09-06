@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { request as httpRequest } from 'node:http';
 import test from 'node:test';
 import { parseOptions } from './index.js';
-
+import { CONTROL_CENTER_HTML } from './control-center.js';
 // ---- parseOptions gate tests ----
 
 test('parseOptions requires token when binding off loopback', () => {
@@ -58,11 +58,13 @@ async function startTestServer(opts: { token?: string } = {}): Promise<{ port: n
       res.end(JSON.stringify({ ok: true, service: 'chatgpt-machine-mcp', endpoint: '/mcp' }));
       return;
     }
-    if ((pathname === '/ui' || pathname === '/ui/audit') && !hasValidBearerToken(req, opts.token)) {
+    if ((pathname === '/ui' || pathname.startsWith('/ui/')) && !hasValidBearerToken(req, opts.token)) {
       res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' }); res.end(JSON.stringify({ error: 'Unauthorized' })); return;
     }
-    if (pathname === '/ui' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end('<html>recent calls</html>'); return; }
+    if (pathname === '/ui' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(CONTROL_CENTER_HTML); return; }
     if (pathname === '/ui/audit' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ records: [] })); return; }
+    if (pathname === '/ui/runtime' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ready: true, version: 'test', capabilityCount: 2, publicToolCount: 2 })); return; }
+    if (pathname === '/ui/capabilities' && req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ capabilities: [] })); return; }
     if (pathname !== '/mcp') { res.writeHead(404, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: 'Not found' })); return; }
     if (!hasValidBearerToken(req, opts.token)) { res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer' }); res.end(JSON.stringify({ error: 'Unauthorized' })); return; }
     // Minimal MCP success for tests – real handler would do tools/list etc.
@@ -144,7 +146,14 @@ test('HTTP bearer gate protects /mcp and /ui with timingSafeEqual (same-length w
     assert.equal(uiNoAuth.status, 401);
     const uiGood = await httpFetch(`http://127.0.0.1:${srv.port}/ui`, { headers: { authorization: `Bearer ${token}` } });
     assert.equal(uiGood.status, 200);
-    assert.match(await uiGood.text(), /recent calls/i);
+    assert.match(await uiGood.text(), /control center/i);
+    const runtimeNoAuth = await httpFetch(`http://127.0.0.1:${srv.port}/ui/runtime`);
+    assert.equal(runtimeNoAuth.status, 401);
+    const runtimeGood = await httpFetch(`http://127.0.0.1:${srv.port}/ui/runtime`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(runtimeGood.status, 200);
+    assert.equal(((await runtimeGood.json()) as { ready: boolean }).ready, true);
+    const capsGood = await httpFetch(`http://127.0.0.1:${srv.port}/ui/capabilities`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(capsGood.status, 200);
     const cors = await httpFetch(`http://127.0.0.1:${srv.port}/healthz`);
     assert.equal(cors.headers['access-control-allow-origin'], '*');
   } finally { await srv.close(); }
