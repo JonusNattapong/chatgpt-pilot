@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Features
 
+- MCP control plane (runtime_info, capability_diff, restart_if_stale, self_update) (`069c8f1`)
+- capability/version handshake and stale-build detection (`b9826dd`)
+
+### 🧹 Chores & Maintenance
+
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`d3344ac`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`8737978`)
+
+## [1.0.0] - 2026-09-06
+
+### ✨ Features
+
 - capability/version handshake and stale-build detection (`b9826dd`)
 
 ### 🧹 Chores & Maintenance
