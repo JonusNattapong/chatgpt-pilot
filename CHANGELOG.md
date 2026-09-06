@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - polish Thai documentation (`2e741ce`)
 - rewrite Thai README for clarity (`df4e7ed`)
 - sync runtime and capability documentation (`853074d`)
+- document flow orchestration and make changelog idempotent (`fea1f48`)
 
 ### 🧹 Chores & Maintenance
 
@@ -40,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`d3344ac`)
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`8737978`)
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`8169fab`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`5001a4f`)
 
 ## [1.0.0] - 2026-09-06
 
