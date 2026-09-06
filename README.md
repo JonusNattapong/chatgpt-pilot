@@ -1,89 +1,156 @@
 <p align="center">
-  <img src="docs/assets/mcp-tunnel-meme.png" alt="ChatGPT, OpenAI, and MCP Tunnel" width="750">
+  <img src="docs/assets/mcp-tunnel-meme.png" alt="ChatGPT Pilot" width="750">
 </p>
 
 # ChatGPT Pilot
 
 [![CI/CD](https://github.com/JonusNattapong/chatgpt-pilot/actions/workflows/ci.yml/badge.svg)](https://github.com/JonusNattapong/chatgpt-pilot/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![pnpm](https://img.shields.io/badge/pnpm-workspace-orange.svg)](pnpm-workspace.yaml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
-[![Model Context Protocol](https://img.shields.io/badge/MCP-2.0-purple.svg)](https://modelcontextprotocol.io/)
+[![MCP](https://img.shields.io/badge/MCP-2.0-purple.svg)](https://modelcontextprotocol.io/)
 
-ChatGPT Pilot is a local Model Context Protocol (MCP) server that provides system execution, memory, and cognitive capabilities to ChatGPT, Codex, and other MCP-compatible clients.
+**Give ChatGPT controlled access to your local machine.**
 
-It unifies four capabilities behind a single MCP connection:
+ChatGPT Pilot is a local MCP runtime for ChatGPT, Codex, and other MCP clients. It combines machine/coding tools, structured reasoning, reusable skills, persistent Markdown memory, and the ChatGPT tunnel behind one gateway.
 
-- **System and Machine Primitives (`apps/server`)**: Bounded filesystem operations, background process execution, pre-commit Git verification gates, and a persistent Python execution runtime (`toolpy`).
-- **Cognitive Frameworks (`packages/thinkforge`)**: Analytical tools for structured divergence, convergence, assumption testing, and failure mode simulation.
-- **Skills Catalog (`packages/skill-hub`)**: Dynamic discovery and execution of curated procedures stored in `skills/`.
-- **Markdown Memory Engine (`packages/memory`)**: A file-based memory store that organizes documentation, project metadata, architectural decisions, and timelines into human-readable Markdown files without native database dependencies.
-
-## System Architecture
+The normal user experience is a CLI: **set it up once, turn it on, use ChatGPT, turn it off when you are done.**
 
 ```text
-                  ┌─────────────────────────────────────────────────────────┐
-                  │                 ChatGPT / Codex Client                  │
-                  └────────────────────────────┬────────────────────────────┘
-                                               │
-                                      Stdio / HTTP Stream
-                                               │
-                                               ▼
-                  ┌─────────────────────────────────────────────────────────┐
-                  │        ChatGPT Pilot Gateway (`apps/server`)            │
-                  │   - Process Isolation & Supervisor Circuit Breaker      │
-                  │   - Dynamic Policy Governance & NDJSON Audit Trail      │
-                  │   - Hybrid Surface (toolpy + capability_registry)       │
-                  └───────┬──────────────┬──────────────┬─────────────┬─────┘
-                          │              │              │             │
-              ┌───────────┴───┐   ┌──────┴──────┐ ┌─────┴─────┐ ┌─────┴──────────┐
-              │ System/Machine│   │ ThinkForge  │ │ Skill Hub │ │ Memory Book    │
-              │  apps/server  │   │  Cognitive  │ │ Execution │ │ Pure Markdown  │
-              └───────────────┘   └─────────────┘ └───────────┘ └────────────────┘
+ChatGPT / Codex
+      │
+      │ MCP over tunnel or stdio
+      ▼
+ ChatGPT Pilot
+      ├── Machine & coding tools
+      ├── ThinkForge
+      ├── Skill Hub
+      └── Memory
+      │
+      ▼
+ Your computer / workspace
 ```
 
-## Prerequisites
+## Quick start
 
-Before running ChatGPT Pilot, ensure that your environment meets the following requirements:
+### Requirements
 
-- **Node.js**: `20.0.0` or later (`22.x` or `24.x` recommended)
-- **pnpm**: `9.x` or `10.x`
-- **Git**: `2.30.0` or later
-- **Python**: `3.10` or later with `ipykernel` (optional, required only for persistent `toolpy` execution)
+- Node.js 22+
+- pnpm 9+ or 10+
+- Git 2.30+
+- Python 3.10+ with `ipykernel` only if you want persistent `toolpy` Python sessions
 
-## Quickstart
-
-### 1. Clone the repository and install dependencies
+### Install
 
 ```bash
 git clone https://github.com/JonusNattapong/chatgpt-pilot.git
 cd chatgpt-pilot
 pnpm install
-```
-
-### 2. Build the packages
-
-```bash
 pnpm build
 ```
 
-### 3. Verify the installation
+### First-time setup
 
-Run the verification suite to ensure all packages compile and tests pass:
+From the repository root:
 
 ```bash
-# Run the current unit-test suite across all workspace packages
-pnpm test
-
-# Verify the capability surface
-pnpm check:hybrid
+pnpm pilot setup
 ```
 
-### 4. Connect to an MCP Client
+`setup` creates the local Pilot configuration, checks the runtime prerequisites, builds the project, and validates the MCP server.
 
-#### Stdio Mode (Claude Desktop, Antigravity, or Local CLI)
+### Turn Pilot on
 
-Add the server to your client configuration file:
+```bash
+pnpm pilot start
+```
+
+`start` is an alias for `up`. It starts the supervised MCP runtime and ChatGPT tunnel. Starting an already-running local instance is safe: the tunnel lifecycle is designed to be idempotent and will not silently steal a live runtime owned by another checkout.
+
+### Check it
+
+```bash
+pnpm pilot status
+pnpm pilot doctor
+```
+
+### Turn Pilot off
+
+```bash
+pnpm pilot stop
+```
+
+`stop` is an alias for `down` and stops the tunnel/watchdog stack.
+
+### Restart
+
+```bash
+pnpm pilot restart
+```
+
+That is the main workflow:
+
+```text
+pnpm pilot setup       # once
+pnpm pilot start       # turn on
+pnpm pilot status      # inspect
+pnpm pilot doctor      # diagnose
+pnpm pilot restart     # reload/recover
+pnpm pilot stop        # turn off
+```
+
+> The underlying PowerShell/Bash scripts still exist for development and troubleshooting, but they are implementation details. For normal use, use the Pilot CLI.
+
+## CLI
+
+The built CLI identifies itself as `chatgpt-local`. Inside this repository, `pnpm pilot ...` is the convenient entry point.
+
+| Command | Alias | Purpose |
+|---|---|---|
+| `pnpm pilot setup` | — | Initialize config, preflight, build, and check |
+| `pnpm pilot up` | `start`, `on` | Start Pilot and the tunnel |
+| `pnpm pilot down` | `stop`, `off` | Stop Pilot and the tunnel/watchdog |
+| `pnpm pilot restart` | — | Rebuild and restart the stack |
+| `pnpm pilot status` | — | Show tunnel, workspace, supervisor, worker, and circuit state |
+| `pnpm pilot doctor` | — | Run deeper runtime diagnostics |
+| `pnpm pilot check` | — | Build and validate the MCP surface |
+| `pnpm pilot use <path>` | — | Select the active workspace |
+| `pnpm pilot workspace [path]` | — | Read or change the active workspace |
+| `pnpm pilot config show` | — | Show local configuration |
+| `pnpm pilot config init` | — | Create local configuration if missing |
+| `pnpm pilot config reset` | — | Reset local configuration |
+| `pnpm pilot machine list` | — | List registered remote machines |
+| `pnpm pilot version` | — | Print the version |
+
+### Choose a workspace
+
+Pilot can be pointed at the project ChatGPT should work with:
+
+```bash
+pnpm pilot use D:\Projects\Github\my-project
+pnpm pilot status
+```
+
+Changing the configured workspace does not mutate a running worker in place. If `status` reports `restart_required: true`, run:
+
+```bash
+pnpm pilot restart
+```
+
+## Connect ChatGPT
+
+### ChatGPT Web / Desktop
+
+For ChatGPT, Pilot normally runs through the developer tunnel:
+
+```bash
+pnpm pilot start
+```
+
+The local gateway owns the worker and tunnel lifecycle. Once your MCP connection is configured in ChatGPT, you do not need to manually launch the server process for each session.
+
+### Stdio clients
+
+Clients that launch MCP servers directly can use the built server:
 
 ```json
 {
@@ -100,202 +167,192 @@ Add the server to your client configuration file:
 }
 ```
 
-#### Tunnel Mode (ChatGPT Desktop or Web)
+Only use unrestricted machine access when you actually need it. Workspace-scoped access is the safer default.
 
-To connect through OpenAI's developer tunnel:
+## What Pilot gives ChatGPT
 
-- **Windows (PowerShell)**:
-  ```powershell
-  .\scripts\start-tunnel.ps1
-  ```
-- **Linux / macOS (Bash)**:
-  ```bash
-  ./scripts/start-tunnel.sh
-  ```
+### Machine & coding
 
-To check tunnel health, diagnose, restart, or stop:
+Pilot exposes bounded, structured primitives instead of forcing the model to do everything through a shell:
 
-```bash
-# Check tunnel status
-.\scripts\status-tunnel.ps1   # Windows
-./scripts/status-tunnel.sh    # Linux/macOS
+- filesystem reads, searches, atomic edits, and SHA-256 preconditions
+- project snapshots and code search
+- supervised background processes with persistent output offsets
+- direct argv process execution
+- Git status, diff, history, verified commits, and controlled publishing
+- machine, port, disk, network, and runtime diagnostics
+- persistent Python execution through `toolpy`
 
-# Diagnose everything (ownership, build, tunnel, providers, tool surface)
-.\scripts\doctor.ps1           # Windows
-./scripts/doctor.sh             # Linux/macOS
+High-authority operations remain policy/approval gated.
 
-# Restart the full stack (stop, reclaim ownership, start, watchdog)
-.\scripts\restart-tunnel.ps1  # Windows
-./scripts/restart-tunnel.sh     # Linux/macOS
+### ThinkForge
 
-# Stop the tunnel
-.\scripts\stop-tunnel.ps1     # Windows
-./scripts/stop-tunnel.sh      # Linux/macOS
-```
+ThinkForge provides structured reasoning operations for work that benefits from more than a single generation pass:
 
-`ChatGPTMCP` is the sole owner of the `chatgpt-machine` tunnel lifecycle.
-`start` is idempotent (no-op when already running here) and refuses to steal
-a live runtime owned by another checkout unless `-Force` / `--force` is given.
+- problem analysis and reframing
+- inversion and first-principles exploration
+- cross-domain analogy and biomimicry
+- mechanism generation
+- adversarial idea review
+- synthesis
+- bounded falsification experiments
 
-### Control plane (self-diagnosis from ChatGPT)
+### Skill Hub
+
+Skill Hub lets ChatGPT discover and load reusable engineering procedures from the local skill registry. It supports search, task routing, ranking, workflow composition, skill reading, synchronization, and aggregate outcome telemetry.
+
+### Memory
+
+Pilot includes a human-readable Markdown memory engine under `.pilot/memory/`. It can maintain chapters, timelines, summaries, topic recall, and specialized memory drawers without requiring a native database.
+
+## Hybrid tool surface
+
+The hybrid surface keeps the public MCP connection compact while still giving ChatGPT access to the full capability registry:
 
 ```text
-runtime_info -> stale? no -> continue
-             -> yes -> capability_diff -> restart_if_stale -> runtime_info
-self_update  -> origin/main only, ff-only, build, verify, restart, handshake
+ChatGPT
+  │
+  ├── toolpy
+  │     └── controlled programmatic access to capabilities
+  │
+  └── capability_registry
+        ├── coding
+        ├── think
+        ├── skills
+        └── memory
 ```
 
-`runtime_info` / `capability_diff` are read-only. `restart_if_stale` restarts
-only on proven staleness. `self_update` additionally requires
-`MCP_ALLOW_SELF_UPDATE=1` and refuses dirty trees, non-main branches,
-unpushed commits, and divergence.
+This lets ChatGPT compose several low-level operations inside one controlled execution rather than spending a separate MCP round trip on every primitive.
 
-## Core Modules
+## Control plane
 
-### 1. System and Machine Execution (`apps/server`)
+Pilot can inspect whether its running worker matches the current build:
 
-The core server exposes file and process control tools with safety boundaries:
+```text
+runtime_info
+    │
+    ├── fresh ───────────────► continue
+    │
+    └── stale
+          │
+          ▼
+   capability_diff
+          │
+          ▼
+   restart_if_stale
+          │
+          ▼
+     runtime_info
+```
 
-- **Filesystem Tools**: Atomic reads and edits with SHA-256 preconditions and near-miss diagnostics (`read_file`, `write_file`, `edit_file`, `find_files`, `search_code`).
-- **Process Management**: Supervised background execution with monotonic offsets and explicit termination (`start_process`, `read_process_output`, `process_write`, `process_wait`, `stop_process`).
-- **Verified Git Commits**: `git_commit_verified` executes pre-commit verification checks (`test`, `build`) in a temporary index candidate. If verification fails or files mutate during testing, staging is rolled back and the commit is aborted.
-- **Persistent Python (`toolpy`)**: Stateful IPython kernel providing local variables across tool invocations and direct access to internal capabilities via Python functions.
+`runtime_info` and `capability_diff` are read-only. `restart_if_stale` only restarts on demonstrated staleness. `self_update` is more privileged: it requires `MCP_ALLOW_SELF_UPDATE=1` and refuses unsafe repository states such as a dirty tree, non-main branch, unpushed commits, or divergence.
 
-### 2. Cognitive Frameworks (`packages/thinkforge`)
+## Remote machines
 
-Analytical scaffolds that help models structure complex decisions before code generation:
+Pilot can route capabilities to registered remote MCP machines. Selectors can be IDs, names, hostnames, aliases, IP addresses, or `host:port` values.
 
-- `think_analyze_problem`: Models assumptions, constraints, stakeholders, and unknowns before ideation.
-- `think_generate_mechanisms`: Generates concrete mechanism-level alternatives and falsification tests.
-- `think_challenge_idea`: Adversarially tests assumptions, failure modes, evidence needs, and kill criteria.
-- `think_synthesize_ideas`: Combines competing ideas while preserving conflicts and rejected parts.
-- `think_experiment_design`: Converts an idea into a bounded, reversible falsification experiment.
-- `think_unconventional_solve`: Orchestrates analysis, reframing, mechanisms, critique, synthesis, and experiment design.
-- `think_challenge`: Identifies unstated assumptions, edge cases, and failure modes.
-- `think_reframe`: Reformulates a problem under different operational constraints.
-- `think_perspective_swap`: Evaluates designs from different user or system perspectives.
-- `think_stress_test`: Evaluates architectural resilience against load, concurrency, and partial failure.
+```bash
+pnpm pilot machine list
+pnpm pilot machine add devbox 192.168.1.50:8787 --name "Dev Box"
+pnpm pilot machine remove devbox
+```
 
-### 3. Skills Catalog (`packages/skill-hub`)
-
-A curated repository of 139 currently indexed procedural skills located in the `skills/` directory:
-
-- Catalog discovery via `skills_skill_list` and `skills_skill_search`.
-- Task ranking and intent routing via `skills_skill_resolve` and `skills_skill_route`.
-- Ordered workflow composition via `skills_skill_compose`.
-- On-demand procedure retrieval via `skills_skill_read`.
-- Local aggregate learning via `skills_skill_feedback` and `skills_skill_insights` (task/prompt text is not persisted).
-- Procedures cover engineering, performance profiling, security audits, database migrations, and release automation.
-
-### 4. Markdown Memory Engine (`packages/memory`)
-
-A zero-native-dependency memory engine that stores state in structured Markdown files under `.pilot/memory/`:
-
-- **Table of Contents (`TOC.md`)**: Automatically maintained index of all chapters, topics, and timesteps.
-- **Executive Summary (`SUMMARY.md`)**: High-level synthesis of system context, active projects, and architectural patterns.
-- **Chapters (`chapters/`)**:
-  - `01-identity.md`: Developer working preferences and interaction models.
-  - `02-projects.md`: System catalogue, repository paths, and test counts.
-  - `03-architecture.md`: Architectural DNA, loop patterns, and invariants.
-  - `04-timeline.md`: Chronological milestones.
-- **Timesteps (`timesteps/YYYY-MM-DD.md`)**: Time-indexed logs for temporal recall.
-- **Self-Seeding**: Automatically initializes from bundled snapshots in `packages/memory/seed/` when starting in a fresh environment.
-
-## Tool Reference
-
-### System Tools
-
-| Tool | Purpose | Key Parameters |
-|---|---|---|
-| `read_file` | Read bounded file contents with optional line numbers | `path`, `offset`, `limit`, `expected_sha256` |
-| `write_file` | Write complete file contents with collision guard | `path`, `content`, `overwrite`, `expected_sha256` |
-| `edit_file` | Transactionally replace exact text blocks | `path`, `edits`, `expected_sha256` |
-| `find_files` | Search for files by glob pattern | `pattern`, `root`, `max_depth` |
-| `search_code` | Regex search across codebase via ripgrep | `query`, `path`, `case_sensitive` |
-| `shell` | Execute shell command within workspace boundary | `command`, `timeout_ms`, `cwd` |
-| `start_process` | Start a persistent background process | `command`, `cwd` |
-| `read_process_output` | Read stdout/stderr since previous offset | `pid`, `process_id`, `stdout_offset` |
-| `process_write` | Send input to a running process | `pid`, `process_id`, `input` |
-| `process_wait` | Wait for process completion | `pid`, `process_id`, `timeout_ms` |
-| `git_status` | Retrieve structured working tree status | None |
-| `git_diff` | Generate unified diff without shell expansion | `paths`, `cached` |
-| `git_commit_verified` | Commit staged files after passing verification gate | `message`, `paths`, `profile` |
-| `toolpy` | Execute Python code in a stateful IPython session | `code`, `reset_session`, `allow_tools` |
-
-### Memory Tools
-
-| Tool | Purpose | Key Parameters |
-|---|---|---|
-| `memory_toc` | Retrieve the master Table of Contents | None |
-| `memory_summary` | Read the executive summary or chapter overview | `chapter` (optional) |
-| `memory_read_topic` | Read a specific chapter or subtopic section | `topic`, `subtopic` |
-| `memory_recall_time` | Retrieve notes by date or timestep identifier | `timestep` (`YYYY-MM-DD` or `latest`) |
-| `memory_search` | Keyword and semantic search across Markdown files | `query` |
-| `memory_remember` | Append a new entry to the timeline and update index | `title`, `content`, `tags` |
-| `memory_stats` | Report file counts, word counts, and storage paths | None |
-| `memory_recall` | Unified lookup supporting topic, query, or timestep | `query`, `topic`, `timestep` |
-
-### Cognitive and Skill Tools
-
-| Tool | Purpose | Key Parameters |
-|---|---|---|
-| `think_analyze_problem` | Model problem assumptions and constraints | `problem`, `objective`, `constraints` |
-| `think_reframe_problem` | Reframe through selected thinking methods | `problem`, `methods` |
-| `think_generate_mechanisms` | Generate mechanism-level alternatives | `problem`, `objective`, `methods` |
-| `think_challenge_idea` | Challenge assumptions and define kill criteria | `idea`, `objective`, `assumptions` |
-| `think_synthesize_ideas` | Synthesize competing ideas | `problem`, `ideas`, `objective` |
-| `think_experiment_design` | Design a bounded falsification experiment | `idea`, `objective`, `constraint` |
-| `think_unconventional_solve` | Run the full reasoning pipeline | `problem`, `objective`, `constraints`, `methods` |
-| `skills_skill_list` | List installed skills | `offset`, `limit` |
-| `skills_skill_search` | Literal search over skill name/description | `query`, `limit` |
-| `skills_skill_resolve` | Rank and deduplicate skills for a task | `task`, `limit` |
-| `skills_skill_route` | Classify task intent and return ranked candidates | `task`, `limit` |
-| `skills_skill_compose` | Build an ordered workflow of relevant skills | `task`, `max_skills` |
-| `skills_skill_feedback` | Record aggregate local outcome telemetry | `skill`, `outcome` |
-| `skills_skill_insights` | Return taxonomy, duplicate groups, core coverage, and success stats | None |
-| `skills_skill_read` | Read `SKILL.md` or a referenced file inside one skill | `name`, `path` |
-| `skills_skill_sync` | Rescan the workspace skill catalog | None |
-| `skills_skill_stats` | Return catalog count, roots, and last sync | None |
+Remote calls still pass through the remote machine's own policy, workspace boundary, approvals, and audit controls.
 
 ## Configuration
 
-You can configure ChatGPT Pilot through command-line arguments or environment variables:
+Local configuration controls the active workspace, policy, approval mode, and access mode. Runtime flags/environment variables are also available for lower-level launches.
 
-| Argument | Environment Variable | Default | Description |
+| Argument | Environment variable | Default | Purpose |
 |---|---|---|---|
-| `--root` | `MCP_WORKSPACE_ROOT` | Current directory | Working directory and safe-mode boundary |
-| `--tool-surface` | `MCP_TOOL_SURFACE` | `legacy` | Tool exposure: `legacy` (raw tools) or `hybrid` (`toolpy` + registry) |
-| `--dangerously-open-machine` | `MCP_ACCESS_MODE` | `workspace` | Permits unrestricted filesystem and shell access |
-| `--policy` | `MCP_POLICY` | `admin` | Security profile: `admin`, `developer`, or `readonly` |
-| `--approval-mode` | `MCP_APPROVAL_MODE` | `mrtr` | Policy enforcement: `mrtr` (require approval) or `deny` |
-| `--audit-file` | `MCP_AUDIT_FILE` | `.pilot/audit.ndjson` | Destination path for the immutable NDJSON audit trail |
-| `--max-timeout` | `MCP_SUPERVISOR_TIMEOUT_MS` | `600000` | Maximum per-tool timeout in milliseconds |
+| `--root` | `MCP_WORKSPACE_ROOT` | current directory | Workspace and safe-mode boundary |
+| `--tool-surface` | `MCP_TOOL_SURFACE` | `legacy` | `legacy` or `hybrid` tool exposure |
+| `--dangerously-open-machine` | `MCP_ACCESS_MODE` | `workspace` | Enable unrestricted machine access |
+| `--policy` | `MCP_POLICY` | `admin` | `admin`, `developer`, or `readonly` |
+| `--approval-mode` | `MCP_APPROVAL_MODE` | `mrtr` | Approval enforcement mode |
+| `--audit-file` | `MCP_AUDIT_FILE` | `.pilot/audit.ndjson` | Audit trail path |
+| `--max-timeout` | `MCP_SUPERVISOR_TIMEOUT_MS` | `600000` | Maximum per-tool timeout |
 
-## Security and Governance
+## Security model
 
-ChatGPT Pilot enforces the following security boundaries:
+Pilot is powerful by design, so the boundary is explicit:
 
-- **Filesystem Isolation**: In workspace mode, all filesystem reads, writes, and searches are confined to `--root`. Symlinks traversing outside the root boundary are rejected.
-- **Process Supervision**: Background processes execute under a supervisor daemon with configurable timeouts, process tree termination, and an automatic circuit breaker.
-- **Pre-commit Integrity**: `git_commit_verified` computes a SHA-256 fingerprint of tracked files before and after verification to detect uncommitted or side-effect mutations.
-- **Audit Stream**: Every tool call, argument set, execution timestamp, and outcome is written to an append-only `.pilot/audit.ndjson` file. Sensitive credentials (tokens, private keys, and `.env` variables) are automatically redacted before logging and transport.
+- **Workspace isolation** — workspace mode confines filesystem operations to the configured root and rejects escaping symlinks.
+- **Approval gates** — mutating/high-authority capabilities can require explicit authorization.
+- **Process supervision** — long-running processes are tracked and can be inspected or terminated as process trees.
+- **Optimistic concurrency** — file mutation tools can require a SHA-256 observed during the preceding read.
+- **Verified Git flow** — verification can run before selected changes are committed or published.
+- **Audit trail** — machine operations are recorded to NDJSON with sensitive values redacted.
+- **Controlled self-update** — autonomous updates fail closed when repository state is unsafe.
+
+`--dangerously-open-machine` deliberately removes the normal workspace filesystem boundary. Treat it as an administrator/developer mode, not the default installation mode.
+
+## Direct tunnel scripts
+
+These are useful when debugging the lifecycle layer itself. Normal users should prefer `pnpm pilot ...`.
+
+### Windows
+
+```powershell
+.\scripts\start-tunnel.ps1
+.\scripts\status-tunnel.ps1
+.\scripts\doctor.ps1
+.\scripts\restart-tunnel.ps1
+.\scripts\stop-tunnel.ps1
+```
+
+### Linux / macOS
+
+```bash
+./scripts/start-tunnel.sh
+./scripts/status-tunnel.sh
+./scripts/doctor.sh
+./scripts/restart-tunnel.sh
+./scripts/stop-tunnel.sh
+```
 
 ## Development
 
 ```bash
-# Run type checking across all workspace packages
-pnpm typecheck
-
-# Run test suite
-pnpm test
-
-# Build all packages
 pnpm build
+pnpm typecheck
+pnpm test
+pnpm verify
+pnpm check:hybrid
+```
 
-# Verify build and test gates
+Repository layout:
+
+```text
+apps/server          MCP gateway, CLI, machine/coding runtime, supervisor
+packages/thinkforge  structured reasoning capabilities
+packages/skill-hub   local skill registry and routing
+packages/memory      Markdown memory engine
+scripts/             tunnel lifecycle and repository automation
+skills/              reusable skill procedures
+```
+
+## Troubleshooting
+
+Start with:
+
+```bash
+pnpm pilot status
+pnpm pilot doctor
+```
+
+If the configured workspace differs from the running worker:
+
+```bash
+pnpm pilot restart
+```
+
+If you are developing Pilot itself and need to validate the complete repository:
+
+```bash
 pnpm verify
 ```
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).
