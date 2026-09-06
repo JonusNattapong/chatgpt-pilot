@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="เอกสารเทคนิค ChatGPTMCP Hybrid และ runtime reference">
+  <meta name="description" content="เอกสาร ChatGPTMCP Hybrid พร้อมรายละเอียดการทำงานของ runtime">
   <title>ChatGPTMCP Hybrid - เอกสารเทคนิค</title>
   <link rel="stylesheet" href="docs.css">
 </head>
@@ -41,7 +41,7 @@
       <section class="intro" id="overview">
         <p class="kicker">Technical reference</p>
         <h1>ChatGPTMCP Hybrid</h1>
-        <p class="summary">ผิวเครื่องมือแบบกระชับสำหรับ ChatGPT ครอบ machine operations, reasoning tools, reusable skills และ persistent memory โดย ChatGPT วางแผนงาน ส่วน <code>toolpy</code> ใช้ประกอบ capability ที่อยู่ด้านล่าง</p>
+        <p class="summary">ChatGPTMCP Hybrid รวมความสามารถสำหรับจัดการเครื่อง ช่วยวิเคราะห์งาน เรียกใช้ skills และใช้หน่วยความจำถาวรไว้หลัง interface เดียว โดย ChatGPT เป็นตัววางแผน และใช้ <code>toolpy</code> เรียก capability ที่จำเป็นระหว่างทำงาน</p>
         <dl class="facts">
           <div><dt>Public surface</dt><dd>2 tools</dd></div>
           <div><dt>Runtime</dt><dd>Persistent IPython</dd></div>
@@ -52,33 +52,33 @@
 
       <section class="doc-section" id="hybrid">
         <h2>Hybrid surface</h2>
-        <p>Legacy mode เปิด low-level MCP tools ให้ ChatGPT เห็นโดยตรง ส่วน Hybrid mode เก็บ capability เหล่านั้นไว้หลัง controlled Python runtime แล้วเปิดต่อ ChatGPT เพียง <code>toolpy</code> และ <code>capability_registry</code> วิธีนี้ลด noise ตอนเลือก tool แต่ยังใช้ capability เดิมได้ครบผ่าน runtime</p>
+        <p>Legacy mode เปิด MCP tools แต่ละตัวให้ ChatGPT เรียกโดยตรง ส่วน Hybrid mode ซ่อน tools ระดับล่างไว้หลัง Python runtime และเปิดให้ ChatGPT เห็นเพียง <code>toolpy</code> กับ <code>capability_registry</code> ทำให้รายการ tools ที่โมเดลต้องเลือกมีขนาดเล็กลง แต่ยังเรียกความสามารถเดิมได้ครบเมื่อต้องใช้</p>
 
         <table class="reference-table">
           <thead><tr><th>Public tool</th><th>หน้าที่</th></tr></thead>
           <tbody>
-            <tr><td><code>toolpy</code></td><td>รัน Python ที่โมเดลสร้างใน persistent controlled runtime ภายใน cell สามารถดู catalog, เรียก capability ที่ได้รับอนุญาต, รวมหลาย operation และคืน structured result ได้</td></tr>
-            <tr><td><code>capability_registry</code></td><td>ดู metadata ของ capability ที่อยู่หลัง <code>toolpy</code> แบ่งเป็น coding, think, skills และ memory โดยไม่ execute capability</td></tr>
+            <tr><td><code>toolpy</code></td><td>รัน Python ใน runtime ที่คงสถานะข้ามคำสั่งได้ ภายในแต่ละ cell สามารถดูรายการ capability เรียก tools ที่ได้รับอนุญาต ทำหลายขั้นตอนต่อเนื่อง และคืนผลลัพธ์แบบ structured data ได้</td></tr>
+            <tr><td><code>capability_registry</code></td><td>ดู metadata ของ capability ที่เรียกผ่าน <code>toolpy</code> แยกเป็น coding, think, skills และ memory โดยคำสั่งนี้จะไม่เรียก capability จริง</td></tr>
           </tbody>
         </table>
 
         <h3>Runtime contract</h3>
         <div class="capability-list">
-          <div class="capability-row"><strong>allow_tools</strong><p>Read-only capabilities ใช้ได้เป็นค่าเริ่มต้น ส่วน capability ที่แก้ระบบต้องระบุอย่างชัดเจนบนคำขอ <code>toolpy</code> ชั้นนอก</p></div>
-          <div class="capability-row"><strong>session_id</strong><p>กำหนด persistent IPython namespace ตัวแปร import และ helper ที่สร้างไว้สามารถอยู่ข้าม call ได้จนกว่าจะ reset, ถูก evict, worker restart หรือ timeout</p></div>
-          <div class="capability-row"><strong>max_calls</strong><p>จำกัดจำนวน nested MCP capability calls ต่อหนึ่ง cell</p></div>
-          <div class="capability-row"><strong>timeout_ms</strong><p>จำกัดเวลารัน cell เมื่อ timeout session จะถูก terminate เพื่อรับประกัน cleanup</p></div>
-          <div class="capability-row"><strong>max_output_bytes</strong><p>จำกัด stdout, stderr, display output และ structured result</p></div>
+          <div class="capability-row"><strong>allow_tools</strong><p>capability แบบ read-only ใช้ได้เป็นค่าเริ่มต้น ส่วน capability ที่มีการแก้ไขระบบต้องระบุชื่อไว้ใน <code>allow_tools</code> ของคำขอ <code>toolpy</code></p></div>
+          <div class="capability-row"><strong>session_id</strong><p>กำหนดชื่อ session ของ IPython ตัวแปร imports และ helper ที่สร้างไว้จะใช้ต่อในคำสั่งถัดไปได้ จนกว่าจะ reset, ถูกล้างออก, worker restart หรือ session หมดเวลา</p></div>
+          <div class="capability-row"><strong>max_calls</strong><p>จำกัดจำนวนครั้งที่แต่ละ cell เรียก MCP capability ภายใน</p></div>
+          <div class="capability-row"><strong>timeout_ms</strong><p>กำหนดเวลารันสูงสุดของ cell หากเกินเวลาระบบจะปิด session เพื่อให้แน่ใจว่า process ที่เกี่ยวข้องถูกเก็บกวาด</p></div>
+          <div class="capability-row"><strong>max_output_bytes</strong><p>จำกัดขนาด stdout, stderr, display output และ structured result ที่ส่งกลับ</p></div>
         </div>
 
         <pre><code>catalog = await describe()
 status = await tools.machine_status({})
 result({"catalog": catalog, "status": status})</code></pre>
 
-        <p class="warning"><strong>Authority requirement:</strong> Hybrid mode ต้องใช้ <code>--dangerously-open-machine</code> เพราะ persistent Python runtime รันด้วยสิทธิ์ OS ของ MCP worker ถ้าต้องการ workspace-only authority ให้ใช้ bounded tool surface ปกติ หรือครอบ bridge ด้วย external sandbox</p>
+        <p class="warning"><strong>สิทธิ์ที่ต้องใช้:</strong> Hybrid mode ต้องเปิด <code>--dangerously-open-machine</code> เพราะ Python runtime ทำงานด้วยสิทธิ์เดียวกับ OS account ที่รัน MCP worker หากต้องการจำกัดการเข้าถึงให้อยู่เฉพาะ workspace ให้ใช้ tool surface แบบปกติ หรือรัน bridge ภายใน sandbox แยกต่างหาก</p>
 
-        <h3>ต่อ provider เพิ่ม</h3>
-        <p>Hybrid mode สามารถต่อ local provider directories ไว้หลัง <code>toolpy</code> ปัจจุบัน CLI รองรับ Skill Hub, ThinkForge และ OurBook memory</p>
+        <h3>เพิ่ม capability provider</h3>
+        <p>Hybrid mode สามารถเพิ่ม provider จาก directory ในเครื่อง แล้วให้ <code>toolpy</code> เรียกใช้งานได้ ปัจจุบัน CLI รองรับ Skill Hub, ThinkForge และ OurBook Memory</p>
         <pre><code>node dist/index.js \
   --dangerously-open-machine \
   --tool-surface hybrid \
@@ -89,57 +89,57 @@ result({"catalog": catalog, "status": status})</code></pre>
 
       <section class="doc-section" id="architecture">
         <h2>สถาปัตยกรรม</h2>
-        <p>Streamable HTTP เข้า MCP server โดยตรง ส่วน tunnel stdio ผ่าน <code>apps/server/src/supervisor.ts</code> ซึ่งแยก <code>apps/server/src/index.ts</code> ไปอยู่ worker process และ restart พร้อม reinitialize worker ได้เมื่อ crash หรือชน hard request deadline ภายใน worker registry จะ validate ชื่อ tool และ arguments ก่อนผ่าน policy, preconditions, idempotency และ handler ที่แตะ host จริง</p>
+        <p>เมื่อใช้ Streamable HTTP คำขอจะเข้า MCP server โดยตรง ส่วนโหมด tunnel ผ่าน stdio จะวิ่งผ่าน <code>apps/server/src/supervisor.ts</code> ซึ่งรัน <code>apps/server/src/index.ts</code> แยกเป็น worker process หาก worker crash หรือทำงานเกินเวลาที่กำหนด supervisor สามารถ restart และ initialize worker ใหม่ได้ ภายใน worker ระบบจะตรวจชื่อ tool และ arguments ก่อนผ่าน policy, preconditions และ idempotency แล้วจึงเรียก handler ที่ทำงานกับเครื่องจริง</p>
         <p><a href="architecture.html">Architecture reference</a></p>
-        <p class="note">Tunnel เป็น transport plumbing เท่านั้น MCP server ไม่ได้ผูกกับ ChatGPT UI ตัวใดตัวหนึ่ง และใช้กับ MCP client ที่รองรับ protocol เดียวกันได้</p>
+        <p class="note">Tunnel มีหน้าที่เป็นช่องทางรับส่งข้อมูลเท่านั้น ตัว MCP server ไม่ได้ผูกกับหน้า ChatGPT โดยเฉพาะ และสามารถใช้กับ MCP client อื่นที่รองรับ protocol เดียวกันได้</p>
       </section>
 
       <section class="doc-section" id="tools">
         <h2>Tool surface</h2>
-        <p>ใน Legacy mode server เปิด purpose-built tools สำหรับงาน host โดยตรง ส่วน Hybrid mode เก็บ capability เดิมไว้เรียกผ่าน <code>toolpy</code> โดยไม่โฆษณาทุกตัวให้ ChatGPT เห็นพร้อมกัน</p>
+        <p>ใน Legacy mode server เปิด tools สำหรับจัดการเครื่องให้เรียกโดยตรง ส่วน Hybrid mode ยังใช้ capability ชุดเดิม แต่เรียกผ่าน <code>toolpy</code> แทน จึงไม่ต้องส่งรายการ tools ทั้งหมดให้ ChatGPT ทุกครั้ง</p>
         <div class="capability-list">
           <div class="capability-row"><strong>Inspect</strong><p><code>machine_status</code>, file reads, project snapshot, directory listing, file discovery, metadata, image inspection และ code search</p></div>
-          <div class="capability-row"><strong>Edit</strong><p>write, targeted edit, transactional update และ patch application</p></div>
-          <div class="capability-row"><strong>Run</strong><p>shell execution และ managed process lifecycle ทั้ง start, status, output, wait, stop และ stdin</p></div>
-          <div class="capability-row"><strong>Git</strong><p>status, diff, log, show, branch, add, commit, verified commit, checkout และ push โดยไม่ใช้ shell interpolation</p></div>
-          <div class="capability-row"><strong>System</strong><p>process, port, environment, disk, network และ machine inspection แบบ bounded พร้อม redaction</p></div>
-          <div class="capability-row"><strong>Workflow</strong><p>verification gates, idempotency, audit, remote-machine routing และ optional bounded OSINT</p></div>
+          <div class="capability-row"><strong>Edit</strong><p>เขียนไฟล์ แก้เฉพาะจุด อัปเดตแบบ transactional และใช้ patch</p></div>
+          <div class="capability-row"><strong>Run</strong><p>รันคำสั่ง shell และจัดการ process ตั้งแต่ start, status, อ่าน output, wait, stop ไปจนถึงส่งข้อมูลผ่าน stdin</p></div>
+          <div class="capability-row"><strong>Git</strong><p>จัดการ status, diff, log, show, branch, add, commit, verified commit, checkout และ push โดยไม่ประกอบคำสั่งผ่าน shell interpolation</p></div>
+          <div class="capability-row"><strong>System</strong><p>ตรวจ process, port, environment, disk, network และข้อมูลเครื่อง โดยจำกัดขนาดผลลัพธ์และปิดบังข้อมูลสำคัญก่อนส่งกลับ</p></div>
+          <div class="capability-row"><strong>Workflow</strong><p>มี verification gates, idempotency, audit, การส่งคำสั่งไปเครื่องอื่น และ OSINT แบบจำกัดขอบเขตเมื่อเปิดใช้งาน</p></div>
         </div>
 
         <h3>Concurrency guard</h3>
-        <p>File read คืน SHA-256 digest และ write สามารถส่ง <code>expected_sha256</code> ได้ ถ้าไฟล์เปลี่ยนหลังจากอ่าน ระบบจะคืน <code>PRECONDITION_FAILED</code> แทนการเขียนทับแบบเงียบ ๆ</p>
+        <p>เมื่ออ่านไฟล์ ระบบจะคืน SHA-256 มาด้วย ตอนเขียนสามารถส่งค่าเดิมกลับผ่าน <code>expected_sha256</code> หากไฟล์ถูกแก้หลังจากที่อ่าน ระบบจะคืน <code>PRECONDITION_FAILED</code> แทนการเขียนทับไฟล์เวอร์ชันใหม่โดยไม่รู้ตัว</p>
 
         <h3>Stable failures</h3>
         <table class="reference-table">
           <thead><tr><th>Code</th><th>ความหมาย</th></tr></thead>
           <tbody>
-            <tr><td><code>INVALID_ARGUMENT</code></td><td>Input ขาด, ไม่ถูกต้อง หรือเกินขอบเขต</td></tr>
-            <tr><td><code>PATH_DENIED</code></td><td>ติด workspace boundary, symlink escape หรือ OS permission</td></tr>
-            <tr><td><code>PRECONDITION_FAILED</code></td><td>ไฟล์เปลี่ยนหลังจากถูกอ่าน</td></tr>
-            <tr><td><code>AMBIGUOUS_MATCH</code> / <code>NO_MATCH</code></td><td>Text edit ไม่สามารถ apply ได้อย่างปลอดภัย</td></tr>
-            <tr><td><code>TIMEOUT</code> / <code>NETWORK</code></td><td>Command หรือ network operation ไม่เสร็จตามเงื่อนไข</td></tr>
+            <tr><td><code>INVALID_ARGUMENT</code></td><td>input ไม่ครบ รูปแบบไม่ถูกต้อง หรือค่าอยู่นอกขอบเขตที่รองรับ</td></tr>
+            <tr><td><code>PATH_DENIED</code></td><td>path อยู่นอก workspace, symlink ชี้ออกนอกขอบเขต หรือสิทธิ์ของ OS ไม่อนุญาต</td></tr>
+            <tr><td><code>PRECONDITION_FAILED</code></td><td>ไฟล์ถูกแก้หลังจากที่อ่านไปแล้ว</td></tr>
+            <tr><td><code>AMBIGUOUS_MATCH</code> / <code>NO_MATCH</code></td><td>ไม่สามารถระบุตำแหน่งที่ต้องแก้ข้อความได้อย่างแน่นอน</td></tr>
+            <tr><td><code>TIMEOUT</code> / <code>NETWORK</code></td><td>คำสั่งหรือการเชื่อมต่อเครือข่ายไม่เสร็จภายในเงื่อนไขที่กำหนด</td></tr>
           </tbody>
         </table>
       </section>
 
       <section class="doc-section" id="safety">
         <h2>Safety model</h2>
-        <p><strong>Workspace-only mode</strong> บังคับ file tools, search, shell working directories และ patches ให้อยู่ใต้ <code>--root</code> พร้อมปฏิเสธ symlink และ junction escape</p>
-        <p><strong>Unrestricted mode</strong> ใช้ <code>--dangerously-open-machine</code> เพื่อเปิด absolute paths และ shell reach ตามสิทธิ์ของ OS account ปัจจุบัน Hybrid mode ต้องใช้ authority แบบนี้เพราะพึ่ง persistent Python runtime</p>
-        <p class="warning">นี่คือ administrative bridge ไม่ใช่ hostile multi-tenant sandbox ให้ต่อเฉพาะ client และ tunnel ที่ไว้ใจได้ในระดับเดียวกับ OS account ที่รัน server</p>
+        <p><strong>Workspace-only mode</strong> จำกัดการอ่านเขียนไฟล์ การค้นหา working directory ของ shell และ patch ให้อยู่ภายใต้ <code>--root</code> เท่านั้น รวมถึงปฏิเสธ symlink หรือ junction ที่ชี้ออกนอกขอบเขต</p>
+        <p><strong>Unrestricted mode</strong> เปิดด้วย <code>--dangerously-open-machine</code> ทำให้เข้าถึง absolute path และใช้ shell ได้ตามสิทธิ์ของ OS account ที่รัน server โดย Hybrid mode จำเป็นต้องใช้โหมดนี้เพราะมี Python runtime ที่คงสถานะข้ามคำสั่ง</p>
+        <p class="warning">ระบบนี้ออกแบบมาเป็น bridge สำหรับควบคุมเครื่อง ไม่ใช่ sandbox สำหรับผู้ใช้หลายคนที่ไม่ไว้ใจกัน ควรเชื่อมต่อเฉพาะ client และ tunnel ที่คุณยอมให้มีสิทธิ์ระดับเดียวกับ OS account ที่รัน server</p>
       </section>
 
       <section class="doc-section" id="transport">
         <h2>Transport</h2>
-        <p>ใช้ supervised stdio สำหรับ tunnel หรือ Streamable HTTP เป็น transport ทางเลือก</p>
+        <p>Tunnel ใช้ stdio ที่มี supervisor คอยดูแล หรือเลือกใช้ Streamable HTTP ได้</p>
         <pre><code>node dist/index.js --http --http-port 8787 --root D:\Projects\Github</code></pre>
-        <p><code>/healthz</code> รายงาน liveness, <code>/readyz</code> รายงาน readiness, MCP traffic อยู่ที่ <code>/mcp</code> และหน้า <code>/ui</code> อ่าน redacted audit events จาก <code>/ui/audit</code></p>
-        <p>ถ้า bind HTTP ออกนอก loopback ต้องกำหนด bearer token ซึ่งจะใช้ป้องกัน UI endpoints ด้วย</p>
+        <p><code>/healthz</code> ใช้เช็กว่า process ยังทำงานอยู่ <code>/readyz</code> ใช้เช็กว่าระบบพร้อมรับงาน MCP requests อยู่ที่ <code>/mcp</code> ส่วนหน้า <code>/ui</code> อ่าน audit events ที่ปิดบังข้อมูลสำคัญแล้วจาก <code>/ui/audit</code></p>
+        <p>หากเปิด HTTP ให้เข้าถึงจากภายนอกเครื่อง ต้องกำหนด bearer token และ token เดียวกันจะใช้ป้องกัน UI endpoints ด้วย</p>
       </section>
 
       <section class="doc-section" id="operations">
         <h2>Operations</h2>
-        <p>สำหรับ server และ watcher ให้ใช้ managed process runtime โดย metadata และ bounded logs จะเก็บใต้ <code>.chatgpt-machine/</code> ทำให้ MCP worker ที่ restart แล้วยัง recover การ inspect และ stop process ได้</p>
+        <p>สำหรับ server หรือ watcher ควรรันผ่าน managed process runtime ข้อมูล process และ logs ที่จำกัดขนาดจะถูกเก็บไว้ใต้ <code>.chatgpt-machine/</code> ดังนั้นแม้ MCP worker จะ restart ก็ยังกลับมาตรวจสถานะหรือสั่งหยุด process เดิมได้</p>
         <pre><code>chatgpt-local setup
 chatgpt-local up
 chatgpt-local status
@@ -149,10 +149,10 @@ chatgpt-local doctor
 chatgpt-local check
 chatgpt-local config show
 chatgpt-local version</code></pre>
-        <p>Local runtime settings อยู่ใน Git-ignored <code>.chatgpt-machine/config.json</code> และ <code>chatgpt-local use &lt;path&gt;</code> ใช้บันทึก active workspace</p>
+        <p>ค่าของ local runtime เก็บใน <code>.chatgpt-machine/config.json</code> ซึ่งถูก ignore จาก Git ส่วน <code>chatgpt-local use &lt;path&gt;</code> ใช้กำหนด workspace ที่ต้องการใช้งาน</p>
 
         <h3>Multi-machine gateway</h3>
-        <p>Allowlisted Streamable HTTP nodes เก็บใน Git-ignored <code>.chatgpt-machine/machines.json</code> ตัว selector รองรับ id, name, hostname, alias, IP address หรือ host:port แต่ไม่รับ arbitrary URL จาก tool caller</p>
+        <p>รายชื่อเครื่องที่อนุญาตให้เชื่อมต่อผ่าน Streamable HTTP เก็บใน <code>.chatgpt-machine/machines.json</code> ซึ่งถูก ignore จาก Git สามารถเลือกเครื่องด้วย id, name, hostname, alias, IP address หรือ host:port ได้ แต่ tool caller ไม่สามารถส่ง URL ใด ๆ เข้ามาเองได้</p>
       </section>
 
       <section class="doc-section" id="development">
@@ -160,22 +160,22 @@ chatgpt-local version</code></pre>
         <pre><code>npm run build
 npm test
 npm run verify</code></pre>
-        <p>Test suite ครอบ path containment, transactional edits, file preconditions, code search, image validation, timeout promotion, persistent runtime, managed processes, Git, transport, Hybrid surface constraints และ provider routing</p>
+        <p>ชุดทดสอบครอบคลุมการจำกัด path, transactional edits, file preconditions, code search, image validation, timeout, persistent runtime, managed processes, Git, transport, ข้อจำกัดของ Hybrid surface และ provider routing</p>
 
         <h3>Repository map</h3>
         <dl class="file-map">
-          <dt>apps/server/src/hybrid-provider.ts</dt><dd>Compact ChatGPT-facing provider ที่เปิด <code>toolpy</code> และ <code>capability_registry</code></dd>
-          <dt>apps/server/src/runtime-exec.ts</dt><dd>Persistent controlled IPython runtime ที่ใช้โดย <code>runtime_exec</code> และเปิดชื่อเป็น <code>toolpy</code> ใน Hybrid mode</dd>
-          <dt>apps/server/src/index.ts</dt><dd>CLI parsing, provider selection, transports, runtime checks และ server startup</dd>
-          <dt>apps/server/src/tools.ts</dt><dd>Capability registry, schemas, handlers, runtime integration และ public tool metadata</dd>
-          <dt>apps/server/src/supervisor.ts</dt><dd>Tunnel-facing stdio proxy, hard request deadlines, worker restart และ reinitialization</dd>
-          <dt>apps/server/src/verification.ts</dt><dd>Project verification แบบ fast, normal, strict และ verified local commit flow</dd>
-          <dt>apps/server/src/machine-router.ts</dt><dd>Allowlisted remote-node registry, selector resolution, health probing, capability cache และ routed calls</dd>
-          <dt>AGENTS.md</dt><dd>Repository invariants สำหรับ coding agents</dd>
+          <dt>apps/server/src/hybrid-provider.ts</dt><dd>provider สำหรับ Hybrid mode ที่เปิดให้ ChatGPT เห็นเฉพาะ <code>toolpy</code> และ <code>capability_registry</code></dd>
+          <dt>apps/server/src/runtime-exec.ts</dt><dd>IPython runtime ที่คงสถานะข้ามคำสั่ง ใช้โดย <code>runtime_exec</code> และเปิดให้เรียกในชื่อ <code>toolpy</code> เมื่อใช้ Hybrid mode</dd>
+          <dt>apps/server/src/index.ts</dt><dd>อ่าน CLI arguments เลือก provider ตั้งค่า transport ตรวจ runtime และเริ่ม server</dd>
+          <dt>apps/server/src/tools.ts</dt><dd>รวม capability registry, schemas, handlers, การเชื่อมกับ runtime และ metadata ของ public tools</dd>
+          <dt>apps/server/src/supervisor.ts</dt><dd>stdio proxy สำหรับ tunnel จัดการ request deadline, restart worker และ initialize ใหม่</dd>
+          <dt>apps/server/src/verification.ts</dt><dd>ตรวจโปรเจกต์ในระดับ fast, normal และ strict รวมถึงขั้นตอน commit ที่ต้องผ่าน verification ก่อน</dd>
+          <dt>apps/server/src/machine-router.ts</dt><dd>จัดการรายชื่อ remote nodes ที่อนุญาต การเลือกเครื่อง การตรวจ health, capability cache และการส่งคำสั่งไปยังเครื่องปลายทาง</dd>
+          <dt>AGENTS.md</dt><dd>กฎและข้อกำหนดของ repository ที่ coding agents ต้องทำตาม</dd>
         </dl>
       </section>
 
-      <footer class="page-footer">เอกสารเทคนิค ChatGPTMCP โดย source of truth หลักยังเป็น repository และ executable contract</footer>
+      <footer class="page-footer">เอกสาร ChatGPTMCP โดยข้อมูลอ้างอิงหลักยังยึดจาก repository และ contract ที่ระบบใช้งานจริง</footer>
     </main>
 
     <aside class="toc">
