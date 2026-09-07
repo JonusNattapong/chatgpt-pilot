@@ -322,7 +322,13 @@ async def call(name, args=None, **kwargs):
     return await _chatgpt_asyncio.to_thread(_chatgpt_host_sync, 'call', str(name), payload)
 
 
-async def describe(name=None):
+async def describe(name=None, names=None):
+    if name is not None and names is not None:
+        raise TypeError('describe accepts either name or names, not both.')
+    if names is not None:
+        if not isinstance(names, (list, tuple)) or not all(isinstance(item, str) for item in names):
+            raise TypeError('describe(names=...) requires a list of strings.')
+        return await _chatgpt_asyncio.to_thread(_chatgpt_host_sync, 'describe', None, {'names': list(names)})
     return await _chatgpt_asyncio.to_thread(_chatgpt_host_sync, 'describe', None if name is None else str(name), {})
 
 
@@ -778,6 +784,17 @@ export class PersistentIpythonRuntime {
     if (!active || !id) return;
     if (message.type === 'describe') {
       const requested = typeof message.name === 'string' ? message.name : undefined;
+      const requestArgs = message.args && typeof message.args === 'object' && !Array.isArray(message.args)
+        ? message.args as Record<string, unknown> : {};
+      const requestedNames = requestArgs.names === undefined ? undefined : requestArgs.names;
+      if (requested !== undefined && requestedNames !== undefined) {
+        this.send(session, { type: 'response', id, error: describeError(new ToolError('INVALID_ARGUMENT', 'describe accepts either name or names, not both.')) });
+        return;
+      }
+      if (requestedNames !== undefined && (!Array.isArray(requestedNames) || requestedNames.some((name) => typeof name !== 'string'))) {
+        this.send(session, { type: 'response', id, error: describeError(new ToolError('INVALID_ARGUMENT', 'describe(names=...) requires an array of strings.')) });
+        return;
+      }
       const catalog = active.capabilities
         .map((capability) => ({
           name: capability.name,
@@ -786,7 +803,11 @@ export class PersistentIpythonRuntime {
           annotations: capability.annotations,
           authorized: active.allowedTools.has(capability.name),
         }));
-      const result = requested ? catalog.find((entry) => entry.name === requested) ?? null : catalog;
+      const result = requested
+        ? catalog.find((entry) => entry.name === requested) ?? null
+        : requestedNames
+          ? (requestedNames as string[]).map((name) => catalog.find((entry) => entry.name === name) ?? null)
+          : catalog;
       this.send(session, { type: 'response', id, result });
       return;
     }

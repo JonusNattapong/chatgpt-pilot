@@ -32,6 +32,7 @@ $supervisorFile = if (Test-Path (Join-Path $projectRoot 'apps\server\dist\superv
 $supervisorPath = $supervisorFile.Replace('\', '/')
 $watchdogScript = Join-Path $PSScriptRoot 'watch-tunnel.ps1'
 $watchdogPidPath = Join-Path $projectRoot '.tunnel\watch-tunnel.pid'
+$receiptPath = Join-Path $projectRoot '.tunnel\last-control-restart.json'
 $workspaceArg = $workspaceRoot.Replace('\', '/')
 $machinesArg = $machinesFile.Replace('\', '/')
 $openArg = if ($accessMode -eq 'unrestricted') { ' --dangerously-open-machine' } else { '' }
@@ -201,6 +202,12 @@ try {
     }
 
     & (Join-Path $PSScriptRoot 'status-tunnel.ps1')
+
+    try {
+        $after = Get-DaemonStatus
+        $receiptState = if (Test-DaemonReady $after) { 'ready' } else { 'restarting' }
+        [ordered]@{ state = $receiptState; workerPid = if ($after -and $after.process.pid) { $after.process.pid } else { $null }; expectedCommit = $buildCommit; at = (Get-Date).ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath $receiptPath -Encoding UTF8
+    } catch { }
 
     try {
         $after = Get-DaemonStatus

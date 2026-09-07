@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [switch]$NoWatchdog
 )
@@ -6,23 +6,25 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
 $clientPath = Join-Path $projectRoot 'tools\tunnel-client-v0.0.13\tunnel-client.exe'
-$keyPath = Join-Path $projectRoot '.tunnel\control-plane-api-key.dpapi'
+$keyPath = Join-Path $repoRoot '.tunnel\control-plane-api-key.dpapi'
 $profileDir = Join-Path $env:APPDATA 'tunnel-client'
-$workspaceRoot = if ([string]::IsNullOrWhiteSpace($env:MCP_WORKSPACE_ROOT)) { Split-Path -Parent $projectRoot } else { $env:MCP_WORKSPACE_ROOT }
+$workspaceRoot = if ([string]::IsNullOrWhiteSpace($env:MCP_WORKSPACE_ROOT)) { $repoRoot } else { $env:MCP_WORKSPACE_ROOT }
 $accessMode = if ([string]::IsNullOrWhiteSpace($env:MCP_ACCESS_MODE)) { 'unrestricted' } else { $env:MCP_ACCESS_MODE }
 $policy = if ([string]::IsNullOrWhiteSpace($env:MCP_POLICY)) { 'admin' } else { $env:MCP_POLICY }
 $approvalMode = if ([string]::IsNullOrWhiteSpace($env:MCP_APPROVAL_MODE)) { 'mrtr' } else { $env:MCP_APPROVAL_MODE }
-$machinesFile = if ([string]::IsNullOrWhiteSpace($env:MCP_MACHINES_FILE)) { Join-Path $projectRoot '.chatgpt-machine\machines.json' } else { $env:MCP_MACHINES_FILE }
+$machinesFile = if ([string]::IsNullOrWhiteSpace($env:MCP_MACHINES_FILE)) { Join-Path $repoRoot '.chatgpt-machine\machines.json' } else { $env:MCP_MACHINES_FILE }
 $supervisorTimeout = if ([string]::IsNullOrWhiteSpace($env:MCP_SUPERVISOR_TIMEOUT_MS)) { '120000' } else { $env:MCP_SUPERVISOR_TIMEOUT_MS }
 $toolSurface = if ([string]::IsNullOrWhiteSpace($env:MCP_TOOL_SURFACE)) { if ($accessMode -eq 'unrestricted') { 'hybrid' } else { 'legacy' } } else { $env:MCP_TOOL_SURFACE }
-$projectsRoot = Split-Path -Parent $projectRoot
-$skillHubDir = if ([string]::IsNullOrWhiteSpace($env:MCP_SKILL_HUB_DIR)) { Join-Path $projectsRoot 'chatgpt-skill-hub' } else { $env:MCP_SKILL_HUB_DIR }
-$thinkForgeDir = if ([string]::IsNullOrWhiteSpace($env:MCP_THINKFORGE_DIR)) { Join-Path $projectsRoot 'ThinkForge-MCP' } else { $env:MCP_THINKFORGE_DIR }
-$memoryDir = if ([string]::IsNullOrWhiteSpace($env:MCP_MEMORY_DIR)) { Join-Path $projectsRoot 'ourbook' } else { $env:MCP_MEMORY_DIR }
+$projectsRoot = Split-Path -Parent $repoRoot
+$skillHubDir = if ([string]::IsNullOrWhiteSpace($env:MCP_SKILL_HUB_DIR)) { Join-Path $repoRoot 'packages\skill-hub' } else { $env:MCP_SKILL_HUB_DIR }
+$thinkForgeDir = if ([string]::IsNullOrWhiteSpace($env:MCP_THINKFORGE_DIR)) { Join-Path $repoRoot 'packages\thinkforge' } else { $env:MCP_THINKFORGE_DIR }
+$memoryDir = if ([string]::IsNullOrWhiteSpace($env:MCP_MEMORY_DIR)) { Join-Path $repoRoot 'packages\memory' } else { $env:MCP_MEMORY_DIR }
 $supervisorPath = (Join-Path $projectRoot 'dist\supervisor.js').Replace('\', '/')
 $watchdogScript = Join-Path $PSScriptRoot 'watch-tunnel.ps1'
-$watchdogPidPath = Join-Path $projectRoot '.tunnel\watch-tunnel.pid'
+$watchdogPidPath = Join-Path $repoRoot '.tunnel\watch-tunnel.pid'
+$receiptPath = Join-Path $repoRoot '.tunnel\last-control-restart.json'
 $workspaceArg = $workspaceRoot.Replace('\', '/')
 $machinesArg = $machinesFile.Replace('\', '/')
 $openArg = if ($accessMode -eq 'unrestricted') { ' --dangerously-open-machine' } else { '' }
@@ -82,6 +84,8 @@ try {
     }
 
     & (Join-Path $PSScriptRoot 'status-tunnel.ps1')
+
+    [ordered]@{ state = 'ready'; workerPid = $null; expectedCommit = $null; at = (Get-Date).ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath $receiptPath -Encoding UTF8
 
     if (-not $NoWatchdog -and $env:MCP_TUNNEL_WATCHDOG -ne '1' -and (Test-Path -LiteralPath $watchdogScript)) {
         $existingPid = $null

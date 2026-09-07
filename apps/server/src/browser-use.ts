@@ -106,6 +106,25 @@ function bounded(value: string, max = MAX_SNAPSHOT_CHARS): { text: string; trunc
   return value.length > max ? { text: `${value.slice(0, max)}…`, truncated: true } : { text: value, truncated: false };
 }
 
+type BrowserFindMatchMode = 'exact' | 'contains' | 'fuzzy';
+
+function normalizedWords(value: string): string[] {
+  return value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+}
+
+export function browserFindMatches(values: string[], query: string, mode: BrowserFindMatchMode): boolean {
+  const normalizedQuery = query.toLowerCase().trim();
+  if (mode === 'exact') return values.some((value) => value.toLowerCase().trim() === normalizedQuery);
+  if (mode === 'contains') return values.some((value) => value.toLowerCase().includes(normalizedQuery));
+  const queryWords = normalizedWords(query);
+  if (queryWords.length === 0) return false;
+  return values.some((value) => {
+    const valueWords = new Set(normalizedWords(value));
+    const overlap = queryWords.filter((word) => valueWords.has(word)).length;
+    return overlap > 0 && overlap / queryWords.length >= 0.5;
+  });
+}
+
 function publicRef(ref: BrowserRef): BrowserRefMeta {
   const { handle: _handle, ...meta } = ref;
   return meta;
@@ -225,6 +244,7 @@ export class BrowserUseManager {
             href?: string;
             title?: string;
             getAttribute(name: string): string | null;
+            closest?(selector: string): { textContent?: string | null } | null;
           };
           const tag = (el.tagName ?? '').toLowerCase();
           const inputType = el.type?.toLowerCase() ?? null;
@@ -241,9 +261,15 @@ export class BrowserUseManager {
           }
           const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300);
           const ariaLabel = el.getAttribute('aria-label')?.trim() ?? '';
+          const documentLike = (globalThis as unknown as { document: { getElementById(id: string): { textContent?: string | null } | null; querySelectorAll(selector: string): ArrayLike<{ getAttribute(name: string): string | null; textContent?: string | null }> } }).document;
+          const labelledBy = (el.getAttribute('aria-labelledby') ?? '').split(/\s+/).filter(Boolean)
+            .map((id) => documentLike.getElementById(id)?.textContent?.trim() ?? '').filter(Boolean).join(' ');
+          const id = el.getAttribute('id');
+          const forLabel = id ? Array.from(documentLike.querySelectorAll('label')).find((label) => label.getAttribute('for') === id)?.textContent?.trim() ?? '' : '';
+          const wrappingLabel = el.closest?.('label')?.textContent?.trim() ?? '';
           const alt = el.getAttribute('alt')?.trim() ?? '';
           const placeholder = el.placeholder?.trim() || null;
-          const name = (ariaLabel || alt || text || placeholder || el.title || '').slice(0, 300);
+          const name = (ariaLabel || labelledBy || forLabel || wrappingLabel || alt || text || placeholder || el.title || '').replace(/\s+/g, ' ').slice(0, 300);
           return { tag, role, name, text, placeholder, inputType, disabled: Boolean(el.disabled), href: el.href || null };
         });
         const ref = `e${session.generation}.${index + 1}`;
@@ -348,17 +374,19 @@ export class BrowserUseManager {
   async find(args: Record<string, unknown>, maxTimeoutMs: number): Promise<unknown> {
     const id = sessionIdArg(args.session_id);
     const timeoutMs = integerArg(args.timeout_ms, 'timeout_ms', 100, maxTimeoutMs, Math.min(30_000, maxTimeoutMs))!;
-    const query = stringArg(args.query, 'query', true)!.toLowerCase();
+    const rawQuery = stringArg(args.query, 'query', true)!;
+    const query = rawQuery.toLowerCase();
     const role = stringArg(args.role, 'role')?.toLowerCase();
+    const mode = enumArg(args.match_mode, 'match_mode', ['exact', 'contains', 'fuzzy'] as const, 'contains');
     const limit = integerArg(args.limit, 'limit', 1, 50, 20)!;
     const session = this.getSession(id);
     const refs = await this.ensureRefs(session, timeoutMs);
     const matches = refs.filter((entry) => {
       if (role && entry.role?.toLowerCase() !== role) return false;
-      const haystack = [entry.name, entry.text, entry.placeholder, entry.role, entry.tag].filter(Boolean).join(' ').toLowerCase();
-      return haystack.includes(query);
+      const fields = [entry.name, entry.text, entry.placeholder, entry.role, entry.tag].filter((value): value is string => Boolean(value));
+      return browserFindMatches(fields, query, mode);
     }).slice(0, limit);
-    return { state: await this.state(session), query: stringArg(args.query, 'query', true), role: role ?? null, matches, truncated: matches.length >= limit };
+    return { state: await this.state(session), query: rawQuery, role: role ?? null, matchMode: mode, matches, truncated: matches.length >= limit };
   }
 
   async screenshot(args: Record<string, unknown>, maxTimeoutMs: number): Promise<unknown> {
@@ -397,9 +425,18 @@ export class BrowserUseManager {
       const button = enumArg(step.button, 'button', ['left', 'right', 'middle'] as const, 'left');
       const clickCount = integerArg(step.click_count, 'click_count', 1, 3, 1)!;
       const beforePages = session.context.pages().length;
-      await entry.handle.click({ button, clickCount, timeout: timeoutMs });
+      const beforeUrl = session.page.url();
+      try {
+        await entry.handle.click({ button, clickCount, timeout: timeoutMs });
+      } catch (error) {
+        if (error instanceof Error && /not attached|detached from DOM|stale/i.test(error.message)) {
+          throw new ToolError('NOT_FOUND', `Browser element ref "${entry.ref}" is stale or detached.`, 'Call browser_snapshot or browser_find again to get current refs.');
+        }
+        throw error;
+      }
       const pages = session.context.pages().filter((page) => !page.isClosed());
       if (pages.length > beforePages) session.page = pages.at(-1)!;
+      if (session.page.url() !== beforeUrl) await this.disposeRefs(session);
       return { action, ref: entry.ref, button, clickCount };
     }
     if (action === 'type') {
@@ -495,6 +532,7 @@ export function createBrowserUseSpecs(maxTimeoutMs: number, manager = new Browse
           timeout_ms: timeoutSchema(maxTimeoutMs),
           query: { type: 'string', minLength: 1 },
           role: { type: 'string', description: 'Optional exact accessible role filter.' },
+          match_mode: { type: 'string', enum: ['exact', 'contains', 'fuzzy'], default: 'contains', description: 'Matching strategy. exact checks whole fields; contains checks substrings; fuzzy uses shared words.' },
           limit: { type: 'integer', minimum: 1, maximum: 50 },
         },
         required: ['query'],

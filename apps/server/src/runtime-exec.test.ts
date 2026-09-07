@@ -109,6 +109,15 @@ kernelTest('persistent IPython describe exposes schemas independently from execu
   });
 });
 
+kernelTest('persistent IPython describe accepts a batch of capability names', async () => {
+  await withRuntime(async (runtime) => {
+    const result = await runtime.execute({
+      code: "result(await describe(names=['write_file', 'read_file']))", sessionId: 'catalog-batch', timeoutMs: 10_000, maxCalls: 4, maxOutputBytes: 128 * 1024, capabilities, allowedTools: new Set(['read_file']), invoke,
+    });
+    assert.deepEqual((result.result as Array<Record<string, unknown>>).map((item) => item.name), ['write_file', 'read_file']);
+  });
+});
+
 kernelTest('persistent IPython preserves Unicode and omits empty duplicate output fields', async () => {
   await withRuntime(async (runtime) => {
     const output = await runtime.execute({
