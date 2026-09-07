@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - consolidate Pilot setup and control center (`cdf1634`)
 - MCP control plane (runtime_info, capability_diff, restart_if_stale, self_update) (`069c8f1`)
 - capability/version handshake and stale-build detection (`b9826dd`)
+- add browser and computer use v2 (`410d4b5`)
 
 ### 📚 Documentation
 
@@ -42,7 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`8737978`)
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`8169fab`)
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`5001a4f`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`b6b9726`)
 
+### 🐛 Bug Fixes
+
+- gate worker ready on reinitialization and bound it with a readiness timeout (`acdff0f`)
 ## [1.0.0] - 2026-09-06
 
 ### ✨ Features
