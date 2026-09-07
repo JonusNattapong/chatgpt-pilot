@@ -33,7 +33,7 @@ ChatGPT Pilot คือ MCP Server ที่เชื่อม ChatGPT, Codex �
                   │        ChatGPT Pilot Gateway (`apps/server`)            │
                   │   - การแยกโปรเซส พร้อม Supervisor Circuit Breaker        │
                   │   - ควบคุมนโยบายความปลอดภัยและบันทึกประวัติ (NDJSON)     │
-                  │   - Hybrid Surface (toolpy + capability_registry)       │
+                  │   - Hybrid Surface (toolpy + registry + browser/computer)       │
                   └───────┬──────────────┬──────────────┬─────────────┬─────┘
                           │              │              │             │
               ┌───────────┴───┐   ┌──────┴──────┐ ┌─────┴─────┐ ┌─────┴──────────┐
@@ -48,6 +48,7 @@ ChatGPT Pilot คือ MCP Server ที่เชื่อม ChatGPT, Codex �
 - **pnpm**: เวอร์ชัน `9.x` หรือ `10.x`
 - **Git**: เวอร์ชัน `2.30.0` ขึ้นไป
 - **Python**: เวอร์ชัน `3.10` ขึ้นไปพร้อม `ipykernel` (จำเป็นเฉพาะเมื่อใช้งาน `toolpy`)
+- **Browser**: Chrome หรือ Edge สำหรับชุดเครื่องมือ `browser_*` หรือจะติดตั้ง Playwright Chromium ด้วย `pnpm --filter @chatgpt-pilot/server exec playwright install chromium`
 
 ## การเริ่มต้นใช้งาน
 
@@ -144,6 +145,8 @@ self_update -> ff-only origin/main -> build -> verify -> supervised restart -> h
 - **การจัดการโปรเซส**: ควบคุมโปรเซสเบื้องหลังผ่าน Supervisor อ่านเอาต์พุตแบบต่อเนื่อง และหยุดโปรเซสได้อย่างเป็นระบบ (`start_process`, `read_process_output`, `process_write`, `process_wait`, `stop_process`)
 - **การตรวจสอบ Git ก่อนคอมมิต**: `git_commit_verified` รันคำสั่งตรวจสอบ (`test`, `build`) บน index ชั่วคราว หากตรวจสอบไม่ผ่านหรือพบว่า working tree ถูกแก้ระหว่างตรวจสอบ ระบบจะยกเลิกการคอมมิตทันที
 - **Persistent Python (`toolpy`)**: เซสชัน IPython แบบคงสถานะ เก็บตัวแปรข้ามคำสั่งได้ และเรียกความสามารถของ MCP ผ่านฟังก์ชัน Python
+- **Browser Use (`browser_*`)**: แยกเป็น `browser_session`, `browser_snapshot`, `browser_find`, `browser_screenshot`, `browser_act` โดยใช้ accessibility snapshot + element ref เป็นหลัก ลดการเดา selector และส่ง screenshot เป็น MCP image โดยตรง
+- **Computer Use (`computer_*`)**: แยกการสังเกต (`computer_observe`: screenshot/cursor/zoom) ออกจากการส่ง input (`computer_act`: move/click/drag/type/key/hotkey/hold/scroll/wait/batch) โดยไม่เปิด arbitrary script ให้โมเดล
 
 #### GPT.md: บริบทสำหรับ ChatGPT Pilot
 
@@ -244,6 +247,8 @@ Skill Hub จัดการทักษะ 139 รายการใน `skills
 | `git_diff` | ดู diff ของไฟล์ที่แก้ไข | `paths`, `cached` |
 | `git_commit_verified` | คอมมิตโค้ดหลังผ่านการตรวจสอบ build/test | `message`, `paths`, `profile` |
 | `toolpy` | รันโค้ด Python ในเซสชัน IPython แบบคงสถานะ | `code`, `reset_session`, `allow_tools` |
+| `browser_session` / `browser_snapshot` / `browser_find` / `browser_screenshot` / `browser_act` | เปิด/นำทาง session, อ่าน accessibility snapshot, หา element ref, จับภาพ และ action ผ่าน ref | `session_id`, `url`, `query`, `ref`, `steps` |
+| `computer_observe` / `computer_act` | จับภาพ/อ่าน cursor/zoom และควบคุม GUI ของ Windows ด้วยพิกัดอิง screenshot | `action`, `x`, `y`, `to_x`, `to_y`, `text`, `key`, `keys`, `steps` |
 
 ### Memory
 
@@ -280,7 +285,7 @@ Skill Hub จัดการทักษะ 139 รายการใน `skills
 | อาร์กิวเมนต์ | ตัวแปรสภาพแวดล้อม | ค่าเริ่มต้น | รายละเอียด |
 |---|---|---|---|
 | `--root` | `MCP_WORKSPACE_ROOT` | โฟลเดอร์ปัจจุบัน | โฟลเดอร์รากที่ใช้จำกัดขอบเขตการเข้าถึง |
-| `--tool-surface` | `MCP_TOOL_SURFACE` | `legacy` | รูปแบบการเปิดเผยเครื่องมือ: `legacy` (แยกเป็นราย tool) หรือ `hybrid` (`toolpy` + registry) |
+| `--tool-surface` | `MCP_TOOL_SURFACE` | `legacy` | รูปแบบการเปิดเผยเครื่องมือ: `legacy` (แยกเป็นราย tool) หรือ `hybrid` (`toolpy` + registry + ชุด `browser_*` + ชุด `computer_*`) |
 | `--dangerously-open-machine` | `MCP_ACCESS_MODE` | `workspace` | อนุญาตให้เข้าถึงระบบไฟล์และเชลล์นอกโฟลเดอร์หลัก |
 | `--policy` | `MCP_POLICY` | `admin` | นโยบายความปลอดภัย: `admin`, `developer`, หรือ `readonly` |
 | `--approval-mode` | `MCP_APPROVAL_MODE` | `mrtr` | พฤติกรรมเมื่อเครื่องมือต้องขออนุมัติ: `mrtr` (ส่งคำขออนุมัติ) หรือ `deny` |

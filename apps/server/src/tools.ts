@@ -56,6 +56,8 @@ import { osintFetch, osintSearch, type OsintScope } from './osint.js';
 import { explainPilotContext, loadPilotContext } from './context.js';
 import { TodoLedger, createTodoToolSpecs } from './todo-tools.js';
 import { createLearningToolSpecs } from './learning-tools.js';
+import { createBrowserUseSpecs } from './browser-use.js';
+import { createComputerUseSpecs } from './computer-use.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -1344,6 +1346,7 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
 
   specs.push(...createTodoToolSpecs(context.root, todoLedger));
   specs.push(...createLearningToolSpecs(context.root, todoLedger, invokeLearningExternal));
+  specs.push(...createBrowserUseSpecs(context.maxTimeoutMs), ...createComputerUseSpecs());
 
   if (context.osintEnabled) {
     specs.push({

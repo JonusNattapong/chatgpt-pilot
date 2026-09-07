@@ -13,11 +13,25 @@ function spec(name: string, readOnlyHint = true): ToolSpec {
   };
 }
 
-test('hybrid provider exposes a compact ChatGPT-facing surface', () => {
+test('hybrid provider exposes the compact automation families directly', () => {
   const runtime = spec('runtime_exec', false);
-  const provider = createHybridProvider({ capabilities: [spec('read_file'), spec('git_diff'), runtime] });
+  const automation = [
+    spec('browser_session', false),
+    spec('browser_snapshot'),
+    spec('browser_find'),
+    spec('browser_screenshot'),
+    spec('browser_act', false),
+    spec('computer_observe'),
+    spec('computer_act', false),
+  ];
+  const provider = createHybridProvider({ capabilities: [spec('read_file'), spec('git_diff'), ...automation, runtime] });
   assert.equal(provider.id, 'hybrid');
-  assert.deepEqual(provider.tools().map((tool) => tool.name), ['toolpy', 'capability_registry']);
+  assert.deepEqual(provider.tools().map((tool) => tool.name), [
+    'toolpy', 'capability_registry',
+    'browser_session', 'browser_snapshot', 'browser_find', 'browser_screenshot', 'browser_act',
+    'computer_observe', 'computer_act',
+  ]);
+  for (let index = 0; index < automation.length; index++) assert.equal(provider.tools()[index + 2]?.handler, automation[index]?.handler);
   assert.equal(provider.tools()[0]?.handler, runtime.handler);
   assert.equal(provider.tools()[0]?.annotations.destructiveHint, true);
 });

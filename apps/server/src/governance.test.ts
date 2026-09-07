@@ -29,6 +29,11 @@ test('readonly policy denies mutations and developer policy approval-gates high-
     assert.equal(evaluatePolicy(readonly, byName.get('shell_command')!, { command: 'echo hi' }, root).allowed, false);
     assert.equal(evaluatePolicy(readonly, byName.get('machine_call')!, { machine: 'server', tool: 'read_file', arguments: { path: 'README.md' } }, root).allowed, false);
     assert.equal(evaluatePolicy(readonly, byName.get('machine_read')!, { machine: 'server', tool: 'read_file', arguments: { path: 'README.md' } }, root).allowed, false);
+    assert.equal(evaluatePolicy(readonly, byName.get('browser_session')!, { action: 'tabs' }, root).allowed, false);
+    assert.equal(evaluatePolicy(readonly, byName.get('browser_snapshot')!, {}, root).allowed, true);
+    assert.equal(evaluatePolicy(readonly, byName.get('browser_act')!, { action: 'click', ref: 'e1.1' }, root).allowed, false);
+    assert.equal(evaluatePolicy(readonly, byName.get('computer_observe')!, { action: 'cursor' }, root).allowed, true);
+    assert.equal(evaluatePolicy(readonly, byName.get('computer_act')!, { action: 'click', x: 1, y: 1 }, root).allowed, false);
 
     const developer = loadPolicy('developer', root);
     const shell = evaluatePolicy(developer, byName.get('shell_command')!, { command: 'npm test', workdir: root }, root);
@@ -43,6 +48,11 @@ test('readonly policy denies mutations and developer policy approval-gates high-
     assert.equal(routedRead.allowed, true);
     assert.equal(routedRead.requiresApproval, false);
     assert.equal(evaluatePolicy(developer, byName.get('read_file')!, { path: 'README.md' }, root).requiresApproval, false);
+    assert.equal(evaluatePolicy(developer, byName.get('browser_session')!, { action: 'tabs' }, root).requiresApproval, false);
+    assert.equal(evaluatePolicy(developer, byName.get('browser_snapshot')!, {}, root).requiresApproval, false);
+    assert.equal(evaluatePolicy(developer, byName.get('browser_act')!, { action: 'click', ref: 'e1.1' }, root).requiresApproval, true);
+    assert.equal(evaluatePolicy(developer, byName.get('computer_observe')!, { action: 'cursor' }, root).requiresApproval, false);
+    assert.equal(evaluatePolicy(developer, byName.get('computer_act')!, { action: 'click', x: 1, y: 1 }, root).requiresApproval, true);
     assert.equal(evaluatePolicy(loadPolicy('admin', root), byName.get('read_file')!, { path: '.env' }, root).allowed, false);
     assert.equal(evaluatePolicy(loadPolicy('admin', root), byName.get('read_file')!, { path: '.ssh/id_ed25519' }, root).allowed, false);
   });

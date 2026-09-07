@@ -86,6 +86,8 @@ const BUILTIN: Record<PolicyProfileName, PolicyConfig> = {
         'self_update',
         'machine_call',
         'save_image_from_url',
+        'browser_act',
+        'computer_act',
       ],
     },
     filesystem: { deny: [] },

@@ -34,6 +34,8 @@ ChatGPT Pilot functions as a unified gateway and capability fabric bridging AI c
 - **Persistent Python Execution (`toolpy`)**:
   - Provides stateful IPython kernels holding runtime variables across calls.
   - Exposes internal capabilities as local Python callable functions (`call_tool()`), reducing round-trip token overhead.
+- **Stateful Browser Automation (`browser_*`)**: Playwright-backed sessions use an accessibility/ref-first interface: `browser_session` owns navigation/tabs/lifecycle, `browser_snapshot` emits bounded ARIA state plus generation-scoped element refs, `browser_find` searches those refs cheaply, `browser_screenshot` emits bounded MCP-native PNG images, and `browser_act` performs ref-based actions/batches. Cookies/storage are never returned and idle sessions self-close.
+- **Structured Desktop Automation (`computer_*`)**: `computer_observe` is read-only and exposes full-screen capture, cursor position, and bounded zoom-region capture; `computer_act` owns structured mouse/keyboard mutations including drag, hold, scroll, and bounded batches. Coordinates remain screenshot-relative across multi-monitor layouts and no arbitrary script input is exposed.
 
 ### 2.2 Cognitive Accelerators (`packages/thinkforge`)
 - Provides divergent and convergent thinking structures.

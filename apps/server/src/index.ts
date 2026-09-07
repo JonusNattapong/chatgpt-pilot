@@ -29,6 +29,7 @@ import { CONTRACT_VERSION, createContractManifest } from './contract.js';
 import { describeError, ToolError } from './errors.js';
 import { evaluatePolicy, loadPolicy, policyFingerprint, validatePolicyConfig, type PolicyConfig } from './policy.js';
 import { withToolSpan } from './telemetry.js';
+import { isMcpImageResult } from './mcp-content.js';
 import type { ToolSpec } from './tools.js';
 import { ToolGateway, type ToolProvider } from './gateway.js';
 import { createMachineProvider } from './machine-provider.js';
@@ -202,6 +203,14 @@ function textResult(value: unknown, isError = false) {
  * failure, on a stable "error.code" instead of pattern-matching prose.
  */
 function successResult(value: unknown) {
+  if (isMcpImageResult(value)) {
+    return {
+      content: [
+        { type: 'text' as const, text: redactSecrets(JSON.stringify({ ok: true, ...value.value }, null, 2)) },
+        { type: 'image' as const, data: value.data, mimeType: value.mimeType },
+      ],
+    };
+  }
   return textResult({ ok: true, ...(value as Record<string, unknown>) });
 }
 

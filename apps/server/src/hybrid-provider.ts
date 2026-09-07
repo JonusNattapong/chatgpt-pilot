@@ -79,7 +79,17 @@ export function createHybridProvider(options: HybridProviderOptions): ToolProvid
     description: 'Execute model-generated Python in the persistent controlled capability runtime. Use await describe() to inspect capability schemas plus authorization state, await tools.<name>(...) to invoke authorized capabilities, and result(value) for structured output. Low-level coding capabilities stay behind this tool so ChatGPT can compose them programmatically.',
   };
 
-  const publicTools = [toolpy, registrySpec(options.capabilities)];
+  const directAutomation = [
+    'browser_session',
+    'browser_snapshot',
+    'browser_find',
+    'browser_screenshot',
+    'browser_act',
+    'computer_observe',
+    'computer_act',
+  ]
+    .flatMap((name) => options.capabilities.find((spec) => spec.name === name) ?? []);
+  const publicTools = [toolpy, registrySpec(options.capabilities), ...directAutomation];
   return {
     id: 'hybrid',
     tools: () => publicTools,
