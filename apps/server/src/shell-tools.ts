@@ -55,6 +55,13 @@ const POWERSHELL_ERROR_MARKER_PREFIX = '__CHATGPT_MACHINE_POWERSHELL_ERROR__';
 function wrapPowerShellCommand(command: string, marker: string): string {
   return [
     "$ErrorActionPreference = 'Stop'",
+    // Windows PowerShell inherits the active console/code-page encoding. The
+    // parent process decodes pipes as UTF-8, so force both PowerShell output
+    // and native-command output to the same encoding before any user code.
+    '$utf8 = [System.Text.UTF8Encoding]::new($false)',
+    '$OutputEncoding = $utf8',
+    '[Console]::OutputEncoding = $utf8',
+    '[Console]::InputEncoding = $utf8',
     '$global:LASTEXITCODE = $null',
     'try {',
     '  & {',
@@ -205,7 +212,11 @@ export async function runShellCommand(options: ShellCommandOptions): Promise<She
     const powerShellErrorMarker = shell.kind === 'powershell'
       ? `${POWERSHELL_ERROR_MARKER_PREFIX}_${process.pid}_${Date.now()}_${Math.random().toString(16).slice(2)}`
       : undefined;
-    const executedCommand = shell.kind === 'powershell' ? wrapPowerShellCommand(options.command, powerShellErrorMarker!) : options.command;
+    const executedCommand = shell.kind === 'powershell'
+      ? wrapPowerShellCommand(options.command, powerShellErrorMarker!)
+      : shell.kind === 'cmd' && process.platform === 'win32'
+        ? `chcp 65001>nul & ${options.command}`
+        : options.command;
     const child = spawn(shell.executable, [...shell.args, executedCommand], {
       cwd: workdir,
       env: options.env ? { ...process.env, ...options.env } : process.env,

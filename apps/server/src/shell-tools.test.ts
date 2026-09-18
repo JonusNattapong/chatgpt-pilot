@@ -103,6 +103,43 @@ test('PowerShell non-terminating errors are converted into a failed shell result
   }
 });
 
+test('PowerShell shell preserves Thai UTF-8 output', async (t) => {
+  if (process.platform !== 'win32') return t.skip('Windows PowerShell behavior is Windows-only');
+  const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-powershell-utf8-'));
+  try {
+    const result = await runShellCommand({
+      command: "Write-Output 'ภาษาไทย สวัสดีครับ'",
+      root,
+      unrestricted: false,
+      shell: 'powershell',
+      timeoutMs: 10_000,
+    });
+    assert.equal(result.success, true);
+    assert.equal(result.stdout.trim(), 'ภาษาไทย สวัสดีครับ');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('cmd shell preserves Thai UTF-8 output', async (t) => {
+  if (process.platform !== 'win32') return t.skip('Windows cmd behavior is Windows-only');
+  const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-cmd-utf8-'));
+  try {
+    const result = await runShellCommand({
+      // Keep the command line ASCII; the child still emits real Thai UTF-8.
+      command: 'node -e process.stdout.write(String.fromCodePoint(0xe20,0xe32,0xe29,0xe32,0xe44,0xe17,0xe22,32,0xe2a,0xe27,0xe31,0xe2a,0xe14,0xe35,0xe04,0xe23,0xe31,0xe1a))',
+      root,
+      unrestricted: false,
+      shell: 'cmd',
+      timeoutMs: 10_000,
+    });
+    assert.equal(result.success, true);
+    assert.equal(result.stdout.trim(), 'ภาษาไทย สวัสดีครับ');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('shell stops when the configured output limit is reached', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-output-'));
   try {
