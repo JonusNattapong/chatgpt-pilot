@@ -31,7 +31,11 @@ export function defaultLocalConfig(root: string): LocalConfig {
     accessMode: 'unrestricted',
     policy: 'admin',
     approvalMode: 'mrtr',
-    supervisorTimeoutMs: 120_000,
+    // Tool calls may legitimately run for several minutes (for example a
+    // repository verification or bounded research task).  Keep this aligned
+    // with the documented maximum per-tool timeout so the tunnel does not
+    // turn a slow, healthy call into a reconnect/502 cascade.
+    supervisorTimeoutMs: 600_000,
   };
 }
 

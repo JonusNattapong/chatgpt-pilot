@@ -110,6 +110,30 @@ test('preflight passes when the runtime is fully provisioned', () => {
   }
 });
 
+test('preflight accepts the monorepo root used by the lifecycle scripts', () => {
+  const repositoryRoot = mkdtempSync(path.join(tmpdir(), 'machine-mcp-repo-'));
+  try {
+    writeFileSync(path.join(repositoryRoot, 'package.json'), '{}');
+    const toolsDir = path.join(repositoryRoot, 'tools', 'tunnel-client-v0.0.13');
+    mkdirSync(toolsDir, { recursive: true });
+    mkdirSync(path.join(repositoryRoot, '.tunnel'), { recursive: true });
+    if (process.platform === 'win32') {
+      writeFileSync(path.join(toolsDir, 'tunnel-client.exe'), '');
+      writeFileSync(path.join(repositoryRoot, '.tunnel', 'control-plane-api-key.dpapi'), 'sk-test');
+    } else {
+      writeFileSync(path.join(toolsDir, 'tunnel-client'), '');
+      writeFileSync(path.join(repositoryRoot, '.tunnel', 'control-plane-api-key'), 'sk-test');
+    }
+
+    const serverProject = path.join(repositoryRoot, 'apps', 'server');
+    mkdirSync(serverProject, { recursive: true });
+    assert.deepEqual(preflight(repositoryRoot), []);
+    assert.notDeepEqual(preflight(serverProject), []);
+  } finally {
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  }
+});
+
 test('preflight treats CONTROL_PLANE_API_KEY env as satisfying the runtime key', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'machine-mcp-preflight-'));
   try {

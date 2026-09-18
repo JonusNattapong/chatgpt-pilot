@@ -25,7 +25,7 @@ access_mode="${MCP_ACCESS_MODE:-unrestricted}"
 policy="${MCP_POLICY:-admin}"
 approval_mode="${MCP_APPROVAL_MODE:-mrtr}"
 machines_file="${MCP_MACHINES_FILE:-${project_root}/.chatgpt-machine/machines.json}"
-supervisor_timeout="${MCP_SUPERVISOR_TIMEOUT_MS:-120000}"
+supervisor_timeout="${MCP_SUPERVISOR_TIMEOUT_MS:-600000}"
 tool_surface="${MCP_TOOL_SURFACE:-}"
 if [[ -z "${tool_surface}" ]]; then
   if [[ "${access_mode}" == "unrestricted" ]]; then tool_surface="hybrid"; else tool_surface="legacy"; fi
@@ -103,4 +103,3 @@ if [[ "${no_watchdog}" != true && "${MCP_TUNNEL_WATCHDOG:-}" != "1" && -x "${pro
     echo "Tunnel watchdog started (PID $!)"
   fi
 fi
-

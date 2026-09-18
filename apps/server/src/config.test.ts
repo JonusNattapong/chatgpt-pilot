@@ -11,7 +11,7 @@ test('local config defaults preserve current operator behavior', () => {
   assert.equal(config.workspaceRoot, path.dirname(root));
   assert.equal(config.accessMode, 'unrestricted');
   assert.equal(config.policy, 'admin');
-  assert.equal(config.supervisorTimeoutMs, 120000);
+  assert.equal(config.supervisorTimeoutMs, 600000);
 });
 
 test('local config initializes, loads and maps to tunnel environment', () => {

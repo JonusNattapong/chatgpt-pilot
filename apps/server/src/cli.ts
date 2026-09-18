@@ -10,6 +10,7 @@ import { initGlobalGpt } from './context.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, '..');
+const repositoryRoot = path.resolve(projectRoot, '..', '..');
 const scriptsDir = path.join(projectRoot, 'scripts');
 
 type Command = 'setup' | 'up' | 'down' | 'restart' | 'status' | 'use' | 'workspace' | 'machine' | 'doctor' | 'check' | 'config' | 'version' | 'help';
@@ -90,7 +91,7 @@ async function setup(): Promise<void> {
   const globalGpt = await initGlobalGpt();
   const configFile = initLocalConfig(projectRoot);
   const config = loadLocalConfig(projectRoot);
-  const missing = preflight(projectRoot);
+  const missing = preflight(repositoryRoot);
 
   process.stdout.write(`chatgpt-local setup\nproject: ${projectRoot}\nconfig: ${configFile}\nglobal_gpt: ${globalGpt.path} (${globalGpt.created ? 'created' : 'existing'})\nworkspace: ${config.workspaceRoot}\naccess: ${config.accessMode}\n`);
   if (missing.length) {
