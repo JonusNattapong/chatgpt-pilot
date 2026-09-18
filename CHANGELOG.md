@@ -45,10 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`5001a4f`)
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`b6b9726`)
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`dda7d73`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`3e03319`)
 
 ### 🐛 Bug Fixes
 
 - gate worker ready on reinitialization and bound it with a readiness timeout (`acdff0f`)
+- preserve Thai shell output on Windows (`a9cf466`)
 
 ### 🔨 Other Changes
 
