@@ -30,7 +30,15 @@ function Test-TunnelReady {
         $raw = & $clientPath runtimes status chatgpt-machine --json 2>$null
         if ($LASTEXITCODE -ne 0 -or -not $raw) { return $false }
         $status = $raw | ConvertFrom-Json
-        return $status.process_running -eq $true -and $status.healthy -eq $true -and $status.ready -eq $true
+        if ($status.process_running -ne $true -or $status.healthy -ne $true -or $status.ready -ne $true) { return $false }
+
+        # readyz only proves the local daemon is alive. Require a recent successful
+        # control-plane poll too, otherwise the connector can still discover a
+        # cached tool surface while commands never reach this runtime.
+        $healthRaw = & $clientPath health --url $status.health_url --pid $status.process.pid --require-control-plane-poll --json 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $healthRaw) { return $false }
+        $health = $healthRaw | ConvertFrom-Json
+        return $health.result -eq 'ok' -and $health.control_plane_poll.ok -eq $true
     } catch { return $false }
 }
 
