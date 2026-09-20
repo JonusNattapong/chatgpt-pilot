@@ -52,6 +52,8 @@ export interface SupervisorOptions {
   circuitCooldownMs?: number;
   recoveryStableMs?: number;
   readinessTimeoutMs?: number;
+  heartbeatIntervalMs?: number;
+  heartbeatTimeoutMs?: number;
   stdio?: {
     input: NodeJS.ReadableStream;
     output: NodeJS.WritableStream;
@@ -60,6 +62,9 @@ export interface SupervisorOptions {
 }
 
 const REINIT_ID = '__chatgpt_machine_supervisor_reinitialize__';
+const HEARTBEAT_ID = '__chatgpt_machine_supervisor_execute_probe__';
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 5_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const RESTART_DELAY_MS = 250;
 const CIRCUIT_WINDOW_MS = 30_000;
@@ -106,6 +111,8 @@ export class McpSupervisor {
   private recoveryTimer?: NodeJS.Timeout;
   private readinessTimer?: NodeJS.Timeout;
   private restartTimer?: NodeJS.Timeout;
+  private heartbeatTimer?: NodeJS.Timeout;
+  private heartbeatDeadline?: NodeJS.Timeout;
   private pending = new Map<string | number | null, PendingRequest>();
   private queuedLines: string[] = [];
   private initializeMessage?: JsonRpcMessage;
@@ -137,6 +144,8 @@ export class McpSupervisor {
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
     if (this.restartTimer) clearTimeout(this.restartTimer);
     if (this.readinessTimer) clearTimeout(this.readinessTimer);
+    if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
+    if (this.heartbeatDeadline) clearTimeout(this.heartbeatDeadline);
     for (const item of this.pending.values()) clearTimeout(item.timer);
     this.pending.clear();
     this.health = 'stopped';
@@ -308,7 +317,26 @@ export class McpSupervisor {
       const queuedMessage = parseMessage(queuedLine);
       if (queuedMessage) this.forwardToChild(queuedLine, queuedMessage);
     }
+    this.scheduleHeartbeat(generation);
     this.error.write(`[chatgpt-machine-supervisor] worker ready generation=${generation} (health=${this.health}, circuit=${this.circuit})\n`);
+  }
+
+  private scheduleHeartbeat(generation: number): void {
+    if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
+    const intervalMs = this.options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+    this.heartbeatTimer = setTimeout(() => this.runHeartbeat(generation), intervalMs).unref();
+  }
+
+  private runHeartbeat(generation: number): void {
+    this.heartbeatTimer = undefined;
+    if (this.stopping || this.restarting || this.reinitializing || generation !== this.childGeneration || !this.child || this.child.killed) return;
+    this.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: HEARTBEAT_ID, method: 'tools/call', params: { name: 'runtime_info', arguments: {} } }) + '\n');
+    const timeoutMs = this.options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
+    this.heartbeatDeadline = setTimeout(() => {
+      this.heartbeatDeadline = undefined;
+      if (generation !== this.childGeneration || this.stopping) return;
+      this.restartWorker(`execute probe timeout generation=${generation}`);
+    }, timeoutMs).unref();
   }
 
   private onChildLine(line: string, generation: number): void {
@@ -316,6 +344,19 @@ export class McpSupervisor {
     const message = parseMessage(line);
     if (!message) {
       this.error.write('[chatgpt-machine-supervisor] worker emitted malformed JSON line\n');
+      return;
+    }
+
+    if (message.id === HEARTBEAT_ID && (message.result !== undefined || message.error !== undefined)) {
+      if (this.heartbeatDeadline) {
+        clearTimeout(this.heartbeatDeadline);
+        this.heartbeatDeadline = undefined;
+      }
+      if (message.error !== undefined) {
+        this.restartWorker(`execute probe failed generation=${generation}`);
+        return;
+      }
+      this.scheduleHeartbeat(generation);
       return;
     }
 
@@ -353,8 +394,13 @@ export class McpSupervisor {
       reason: 'worker_timeout',
       workerGeneration: this.childGeneration,
       recoverable: true,
+      workerContinues: true,
     }));
-    this.restartWorker(`request timeout method=${method}`);
+    // A request deadline is not proof that the worker is unhealthy. Long Git,
+    // build, and deploy operations may still be running in an awaited child
+    // process. Keep the worker alive so the next request does not race a
+    // reinitialization; managed process tools provide the polling path.
+    this.error.write(`[chatgpt-machine-supervisor] request timeout method=${method}; worker retained\n`);
   }
 
   private handleWorkerFailure(reason: string, generation: number): void {
@@ -415,6 +461,14 @@ export class McpSupervisor {
     if (this.readinessTimer) {
       clearTimeout(this.readinessTimer);
       this.readinessTimer = undefined;
+    }
+    if (this.heartbeatTimer) {
+      clearTimeout(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
+    if (this.heartbeatDeadline) {
+      clearTimeout(this.heartbeatDeadline);
+      this.heartbeatDeadline = undefined;
     }
     this.restarting = true;
     this.reinitializing = Boolean(this.initializeMessage);

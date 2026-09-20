@@ -37,7 +37,7 @@ test('supervisor options validate the hard request deadline', () => {
   assert.throws(() => parseSupervisorArgs(['--supervisor-timeout', '4999']), /between 5000 and 660000/);
 });
 
-test('supervisor restarts a hung MCP worker and the next request succeeds', async () => {
+test('supervisor keeps the worker alive after a tool deadline so the next request succeeds', async () => {
   const distDirectory = path.dirname(fileURLToPath(import.meta.url));
   const fixtureDir = await mkdtemp(path.join(tmpdir(), 'machine-supervisor-'));
   const fixture = path.join(fixtureDir, 'worker.mjs');
@@ -73,9 +73,9 @@ rl.on('line', line => {
     assert.equal(state.ready, true);
     assert.equal(state.health, 'healthy');
     assert.equal(state.circuit, 'closed');
-    assert.ok(state.restarts >= 1);
-    assert.ok(state.workerGeneration >= 2);
-    assert.match(state.lastRestartReason, /request timeout/);
+    assert.equal(state.restarts, 0);
+    assert.equal(state.workerGeneration, 1);
+    assert.equal(state.lastRestartReason, null);
   } finally {
     await client.close();
     await rm(fixtureDir, { recursive: true, force: true });
@@ -329,6 +329,54 @@ rl.on('line', line => {
       4_000,
     );
     assert.ok(recovered.workerGeneration >= 3);
+  } finally {
+    supervisor.stop();
+    input.end();
+    await rm(fixtureDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+test('execute heartbeat restarts a worker that can initialize but cannot invoke runtime_info', async () => {
+  const fixtureDir = await mkdtemp(path.join(tmpdir(), 'machine-heartbeat-'));
+  const fixture = path.join(fixtureDir, 'worker.mjs');
+  const stateFile = path.join(fixtureDir, 'supervisor.json');
+  await writeFile(fixture, `
+import readline from 'node:readline';
+const generation = Number(process.env.MCP_WORKER_GENERATION || '1');
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on('line', line => {
+  const m = JSON.parse(line);
+  if (m.method === 'initialize') return process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:m.params.protocolVersion || 'test',capabilities:{tools:{}},serverInfo:{name:'heartbeat-fixture',version:'1'}}})+'\\n');
+  if (m.method === 'notifications/initialized') return;
+  if (m.method === 'tools/call' && m.params.name === 'runtime_info' && generation === 1) return;
+  if (m.method === 'tools/call') return process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{content:[{type:'text',text:'ok'}]}})+'\\n');
+});
+`, 'utf8');
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const error = new PassThrough();
+  const supervisor = new McpSupervisor({
+    childEntry: fixture,
+    childArgs: ['--root', fixtureDir],
+    requestTimeoutMs: 1_000,
+    restartDelayMs: 20,
+    readinessTimeoutMs: 200,
+    heartbeatIntervalMs: 30,
+    heartbeatTimeoutMs: 40,
+    circuitThreshold: 20,
+    stateFile,
+    stdio: { input, output, error },
+  });
+  try {
+    supervisor.start();
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 'test' } }) + '\n');
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    const recovered = await waitFor(
+      async () => JSON.parse(await readFile(stateFile, 'utf8')) as { ready: boolean; health: string; workerGeneration: number; restarts: number; lastRestartReason: string },
+      (state) => state.workerGeneration >= 2 && state.ready === true && state.restarts >= 1,
+      3_000,
+    );
+    assert.match(recovered.lastRestartReason, /execute probe timeout/);
   } finally {
     supervisor.stop();
     input.end();
