@@ -4,6 +4,8 @@ param(
     [int]$IntervalSeconds = 15,
     [ValidateRange(1, 10)]
     [int]$FailureThreshold = 2,
+    [ValidateRange(15, 3600)]
+    [int]$ReconnectCooldownSeconds = 60,
     [switch]$Once
 )
 
@@ -15,6 +17,7 @@ $startScript = Join-Path $PSScriptRoot 'start-tunnel.ps1'
 $stateDir = Join-Path $projectRoot '.tunnel'
 $pidPath = Join-Path $stateDir 'watch-tunnel.pid'
 $logPath = Join-Path $stateDir 'watch-tunnel.log'
+$statusPath = Join-Path $stateDir 'watch-tunnel-status.json'
 
 function Write-WatchdogLog {
     param([string]$Message)
@@ -23,6 +26,20 @@ function Write-WatchdogLog {
         if ($length -gt 1MB) { Move-Item -LiteralPath $logPath -Destination "$logPath.previous" -Force }
     }
     Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format o) $Message" -Encoding UTF8
+}
+
+function Write-WatchdogStatus {
+    param([bool]$Ready, [int]$Failures, [string]$Reason, [Nullable[datetime]]$LastReconnectAt)
+    $tmp = "$statusPath.tmp.$PID"
+    [ordered]@{
+        ready = $Ready
+        consecutiveFailures = $Failures
+        reason = $Reason
+        checkedAt = (Get-Date).ToString('o')
+        lastReconnectAt = if ($LastReconnectAt) { $LastReconnectAt.Value.ToString('o') } else { $null }
+        watchdogPid = $PID
+    } | ConvertTo-Json | Set-Content -LiteralPath $tmp -Encoding UTF8
+    Move-Item -LiteralPath $tmp -Destination $statusPath -Force
 }
 
 function Test-TunnelReady {
@@ -45,19 +62,30 @@ function Test-TunnelReady {
 if (-not (Test-Path -LiteralPath $clientPath)) { throw "Tunnel client not found: $clientPath" }
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 $failures = 0
+$lastReconnectAt = $null
 try {
     while ($true) {
         if (Test-TunnelReady) {
             $failures = 0
+            Write-WatchdogStatus -Ready $true -Failures 0 -Reason 'healthy' -LastReconnectAt $lastReconnectAt
         } else {
             $failures++
-            if ($failures -ge $FailureThreshold) {
-                Write-WatchdogLog "runtime unhealthy for $failures checks; reconnecting"
+            $cooldownElapsed = -not $lastReconnectAt -or ((Get-Date) - $lastReconnectAt).TotalSeconds -ge $ReconnectCooldownSeconds
+            Write-WatchdogStatus -Ready $false -Failures $failures -Reason $(if ($cooldownElapsed) { 'unhealthy' } else { 'reconnect_cooldown' }) -LastReconnectAt $lastReconnectAt
+            if ($failures -ge $FailureThreshold -and $cooldownElapsed) {
+                $lastReconnectAt = Get-Date
+                Write-WatchdogLog "runtime unhealthy for $failures checks; reconnecting (cooldown=${ReconnectCooldownSeconds}s)"
                 try {
                     & $startScript -NoWatchdog 2>&1 | Out-String | ForEach-Object { if ($_.Trim()) { Write-WatchdogLog $_.Trim() } }
-                    $failures = 0
+                    if (Test-TunnelReady) {
+                        $failures = 0
+                        Write-WatchdogStatus -Ready $true -Failures 0 -Reason 'recovered' -LastReconnectAt $lastReconnectAt
+                    } else {
+                        Write-WatchdogStatus -Ready $false -Failures $failures -Reason 'reconnect_did_not_recover' -LastReconnectAt $lastReconnectAt
+                    }
                 } catch {
                     Write-WatchdogLog "reconnect failed: $($_.Exception.Message)"
+                    Write-WatchdogStatus -Ready $false -Failures $failures -Reason 'reconnect_failed' -LastReconnectAt $lastReconnectAt
                 }
             }
         }
