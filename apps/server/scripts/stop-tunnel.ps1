@@ -11,10 +11,21 @@ if (-not (Test-Path -LiteralPath $clientPath)) {
     throw "Tunnel client not found: $clientPath"
 }
 
+# Windows reuses PIDs. A recorded PID from an earlier session can belong to an
+# unrelated process by now, so every PID is re-identified before it is killed.
+function Get-ProcessInfo([int]$ProcessId) {
+    Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
+}
+
 if (Test-Path -LiteralPath $watchdogPidPath) {
     try {
         $watchdogPid = [int](Get-Content -LiteralPath $watchdogPidPath -Raw)
-        if (Get-Process -Id $watchdogPid -ErrorAction SilentlyContinue) { Stop-Process -Id $watchdogPid -Force }
+        $watchdog = Get-ProcessInfo $watchdogPid
+        if ($watchdog -and "$($watchdog.CommandLine)" -match 'watch-tunnel') {
+            Stop-Process -Id $watchdogPid -Force
+        } elseif ($watchdog) {
+            Write-Host "Ignoring stale watchdog PID $watchdogPid (now $($watchdog.Name))"
+        }
     } catch { }
     Remove-Item -LiteralPath $watchdogPidPath -Force -ErrorAction SilentlyContinue
 }
@@ -26,9 +37,25 @@ if (Test-Path -LiteralPath $watchdogPidPath) {
 # code on the next start-tunnel and silently causes every tool call to 502
 # until someone notices and kills it by hand.
 $statusJson = & $clientPath runtimes status chatgpt-machine --json 2>$null
+$status = $null
 $daemonPid = $null
 if ($LASTEXITCODE -eq 0 -and $statusJson) {
-    try { $daemonPid = ($statusJson | ConvertFrom-Json).process.pid } catch { $daemonPid = $null }
+    try { $status = ($statusJson -join "`n") | ConvertFrom-Json; $daemonPid = $status.process.pid } catch { $status = $null; $daemonPid = $null }
+}
+
+# "runtimes stop" kills the recorded daemon PID without checking what it is now.
+# When the runtime is already down, that PID may have been reused by another
+# process (observed: a Windows system process), so skip the stop entirely.
+if ($status) {
+    $daemon = if ($daemonPid) { Get-ProcessInfo ([int]$daemonPid) } else { $null }
+    $daemonIsTunnelClient = $daemon -and $daemon.Name -ieq 'tunnel-client.exe'
+    if (-not $status.process_running -or -not $daemonIsTunnelClient) {
+        if ($daemon -and -not $daemonIsTunnelClient) {
+            Write-Host "Recorded tunnel-client PID $daemonPid now belongs to $($daemon.Name); not stopping it."
+        }
+        Write-Host 'Tunnel runtime chatgpt-machine is already stopped.'
+        exit 0
+    }
 }
 $children = @()
 if ($daemonPid) {
