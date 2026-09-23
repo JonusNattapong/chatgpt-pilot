@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP control plane (runtime_info, capability_diff, restart_if_stale, self_update) (`069c8f1`)
 - capability/version handshake and stale-build detection (`b9826dd`)
 - add browser and computer use v2 (`410d4b5`)
+- **goal**: durable goal_run runtime with smarter context and repair loop (`de866d5`)
 
 ### 📚 Documentation
 
@@ -48,11 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`3e03319`)
 - update tunnel lifecycle and runtime config (`2acf3a2`)
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`71d0255`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`a35e280`)
 
 ### 🐛 Bug Fixes
 
 - gate worker ready on reinitialization and bound it with a readiness timeout (`acdff0f`)
 - preserve Thai shell output on Windows (`a9cf466`)
+- **tunnel**: never stop a reused PID when the runtime is already down (`729a7cf`)
+- **tunnel**: harden long-running watchdog recovery (`1bb4c2f`)
+- **tunnel**: require live control-plane polling (`c2a2393`)
+- **supervisor**: recover stalled execution backend (`85a7ca0`)
 
 ### 🔨 Other Changes
 
