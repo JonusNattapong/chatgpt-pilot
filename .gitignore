@@ -10,6 +10,7 @@ coverage/
 .skill-hub/
 .chatgpt-machine/
 .tunnel/
+.clew/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
