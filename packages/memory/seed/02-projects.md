@@ -33,7 +33,7 @@ This file consolidates project/repository context ChatGPT could retrieve. Items 
   - contract remembered as v4 / 44 tools at that time
   - later coding capability registry exposed 45 tools
   - added/strengthened `read_files`, `project_snapshot`, `machine_read`, remote capability cache/fingerprint/refresh, audit `targetMachine`/`remoteTool`, PowerShell non-terminating-error handling, and runtime/configured-root visibility.
-- `runtime_exec` / capability runtime milestone around 2026-09-04:
+- Capability registry / hybrid surface milestone around 2026-09-04:
   - moved to persistent Jupyter/IPython kernel
   - stable `session_id` with persisted variables/imports/functions across calls
   - top-level `await`
@@ -51,7 +51,7 @@ This file consolidates project/repository context ChatGPT could retrieve. Items 
 - Standard temporary workspace remembered: `D:\temp\ChatGPT` for scratch files, generated artifacts, logs, downloads, intermediate data; not primary persistent source storage.
 - P0 direction: local execution should be stable, smooth, recoverable, observable.
 - Multi-machine direction: support more than two machines with explicit machine/IP selection.
-- Architecture direction by 2026-09-05: one ChatGPTMCP surface exposing coding, think/ThinkForge, skills, and memory/OurBook capabilities, while ChatGPT Web remains planner/decision-maker and low-level execution stays behind toolpy/capabilities.
+- Architecture direction by 2026-09-05: one ChatGPTMCP surface exposing coding, think/ThinkForge, skills, and memory/OurBook capabilities, while ChatGPT Web remains planner/decision-maker and low-level execution stays behind the capability registry.
 - Additional concepts explored: branching architecture experiments, composing components across repos, code/reasoning checkpointing, sandbox-built persistent tools, bounded background prototypes.
 - 2026-09-05 proposed hardening patches accepted by user: process identity/start-time checks; persistent idempotency receipts; verified-commit content fingerprinting; richer verification diagnostics/overall timeout; `apply_patch` file preconditions; `process_wait` output inclusion. Baseline had pre-existing failures and 23 outstanding tasks that were to be preserved rather than overwritten.
 

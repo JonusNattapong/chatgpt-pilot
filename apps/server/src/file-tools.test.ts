@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -11,10 +11,12 @@ import {
   imageInfo,
   listDirectory,
   readMachineFile,
+  readBinaryFile,
   saveImageFromUrl,
   searchCode,
   updateMachineFile,
   writeMachineFile,
+  writeMachineFileWithRetry,
 } from './file-tools.js';
 
 test('file tools create, read, edit, and update UTF-8 files', async () => {
@@ -172,6 +174,135 @@ test('save_image_from_url requires HTTPS before making a network request', async
     await assert.rejects(
       saveImageFromUrl({ root, unrestricted: false, url: 'http://example.com/a.png', filePath: 'a.png' }),
       /HTTPS/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('read_file supports non-UTF-8 encoding', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-encoding-'));
+  const access = { root, unrestricted: false };
+  try {
+    const latin1 = Buffer.from('café', 'latin1');
+    await writeFile(path.join(root, 'latin1.txt'), latin1);
+    const result = await readMachineFile({ ...access, filePath: 'latin1.txt', encoding: 'latin1' });
+    assert.equal(result.content, 'café');
+    assert.match(result.sha256, /^[a-f0-9]{64}$/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('write_file supports non-UTF-8 encoding', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-write-encoding-'));
+  const access = { root, unrestricted: false };
+  try {
+    await writeMachineFile({ ...access, filePath: 'latin1-out.txt', content: 'café', encoding: 'latin1' });
+    const buffer = await readFile(path.join(root, 'latin1-out.txt'));
+    assert.equal(buffer.toString('latin1'), 'café');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('edit_file supports encoding option', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-edit-encoding-'));
+  const access = { root, unrestricted: false };
+  try {
+    await writeMachineFile({ ...access, filePath: 'latin1-edit.txt', content: 'hello', encoding: 'latin1' });
+    await editMachineFile({ ...access, filePath: 'latin1-edit.txt', oldText: 'hello', newText: 'héllo', encoding: 'latin1' });
+    assert.equal(await readFile(path.join(root, 'latin1-edit.txt'), 'latin1'), 'héllo');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('read_file_binary reads binary files as base64', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-binary-'));
+  const access = { root, unrestricted: false };
+  try {
+    const binary = Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe]);
+    await writeFile(path.join(root, 'binary.bin'), binary);
+    const result = await readBinaryFile({ ...access, filePath: 'binary.bin' });
+    assert.equal(result.bytes, 5);
+    assert.equal(result.truncated, false);
+    assert.equal(result.mimeType, 'application/octet-stream');
+    assert.deepEqual(Buffer.from(result.data, 'base64'), binary);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('read_file_binary supports offset and max_bytes', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-binary-offset-'));
+  const access = { root, unrestricted: false };
+  try {
+    const binary = Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04]);
+    await writeFile(path.join(root, 'offset.bin'), binary);
+    const result = await readBinaryFile({ ...access, filePath: 'offset.bin', offsetBytes: 2, maxBytes: 2 });
+    assert.equal(result.offsetBytes, 2);
+    assert.equal(result.bytes, 2);
+    assert.deepEqual(Buffer.from(result.data, 'base64'), Buffer.from([0x02, 0x03]));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('list_directory supports cursor pagination', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-dir-cursor-'));
+  const access = { root, unrestricted: false };
+  try {
+    for (let i = 0; i < 5; i++) {
+      await writeFile(path.join(root, `file-${i}.txt`), Buffer.from(`content-${i}`));
+    }
+    const first = await listDirectory({ ...access, directoryPath: '.', maxEntries: 2 });
+    assert.equal(first.entries.length, 2);
+    assert.ok(first.cursor);
+    assert.ok(first.nextCursor);
+
+    const second = await listDirectory({ ...access, directoryPath: '.', maxEntries: 2, cursor: first.nextCursor });
+    assert.equal(second.entries.length, 2);
+    assert.ok(second.nextCursor);
+
+    const third = await listDirectory({ ...access, directoryPath: '.', maxEntries: 2, cursor: second.nextCursor });
+    assert.equal(third.entries.length, 1);
+    assert.equal(third.nextCursor, undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('find_files supports cursor pagination', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-find-cursor-'));
+  const access = { root, unrestricted: false };
+  try {
+    await mkdir(path.join(root, 'sub'), { recursive: true });
+    for (let i = 0; i < 3; i++) {
+      await writeFile(path.join(root, 'sub', `file-${i}.txt`), Buffer.from(`content-${i}`));
+    }
+    const first = await findFiles({ ...access, directoryPath: '.', glob: '**/*.txt', maxResults: 2 });
+    assert.equal(first.matches.length, 2);
+    assert.ok(first.cursor);
+
+    const second = await findFiles({ ...access, directoryPath: '.', glob: '**/*.txt', maxResults: 2, cursor: first.cursor });
+    assert.equal(second.matches.length, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('write_file_with_retry retries on precondition failure', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'machine-mcp-retry-'));
+  const access = { root, unrestricted: false };
+  try {
+    await writeMachineFile({ ...access, filePath: 'retry.txt', content: 'v1' });
+    const buffer = await readFile(path.join(root, 'retry.txt'));
+    const staleHash = '0'.repeat(64);
+
+    await assert.rejects(
+      writeMachineFileWithRetry({ ...access, filePath: 'retry.txt', content: 'v2', expectedSha256: staleHash, overwrite: true, retryOnConflict: true, maxRetries: 2 }),
+      (error: unknown) => (error as { code?: string }).code === 'PRECONDITION_FAILED',
     );
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -59,6 +59,12 @@ export interface WriteProcessInputOptions extends ProcessPidOptions {
   end?: boolean;
 }
 
+export interface ProcessClassification {
+  kind: 'long-running' | 'short-lived' | 'interactive' | 'unknown';
+  confidence: 'high' | 'medium' | 'low';
+  reasons: string[];
+}
+
 interface PersistedProcess {
   pid: number;
   processId?: string;
@@ -316,6 +322,49 @@ async function readLog(filePath: string): Promise<string> {
   }
 }
 
+function classifyProcess(command: string, running: boolean, exitCode: number | null): ProcessClassification {
+  const lower = command.toLowerCase();
+  const reasons: string[] = [];
+  let kind: ProcessClassification['kind'] = 'unknown';
+  let confidence: ProcessClassification['confidence'] = 'low';
+
+  if (!running && exitCode === null) {
+    reasons.push('Process is not running and has no recorded exit code.');
+  } else if (!running) {
+    reasons.push(`Process has exited with code ${exitCode}.`);
+  } else {
+    reasons.push('Process is currently running.');
+  }
+
+  if (/node\s+-e\s+".*setTimeout/.test(lower) || /sleep\s+\d+/.test(lower) || /timeout\s+\/\d+/.test(lower)) {
+    reasons.push('Command contains a sleep/timer pattern; likely long-running or test fixture.');
+    kind = 'long-running';
+    confidence = 'medium';
+  } else if (/python\s+-u\s+|\bpython\b.*-m\s+http\.server/.test(lower)) {
+    reasons.push('Command appears to be a Python HTTP server or long-running script.');
+    kind = 'long-running';
+    confidence = 'medium';
+  } else if (/npm\s+(?:run|start|dev|test|watch)\b/.test(lower) || /yarn\s+(?:start|dev|watch)\b/.test(lower) || /pnpm\s+(?:start|dev|watch)\b/.test(lower)) {
+    reasons.push('Command appears to be a long-running development server.');
+    kind = 'long-running';
+    confidence = 'high';
+  } else if (/\b(?:vim|nano|vi|less|more|top|htop|btop|watch|python\s+-i|node\s+-i)\b/i.test(lower)) {
+    reasons.push('Command appears to be interactive.');
+    kind = 'interactive';
+    confidence = 'high';
+  } else if (/\b(?:echo|node\s+-e\s+console\.log|printf|Write-Output|Write-Host)\b/i.test(lower)) {
+    reasons.push('Command appears to be a short-lived output operation.');
+    kind = 'short-lived';
+    confidence = 'medium';
+  }
+
+  if (kind === 'unknown') {
+    reasons.push('Process type could not be determined from the recorded command.');
+  }
+
+  return { kind, confidence, reasons };
+}
+
 async function terminateDirectProcess(child: ChildProcess): Promise<void> {
   if (!child.pid) {
     child.kill();
@@ -443,7 +492,6 @@ export async function startProcess(options: StartProcessOptions) {
   });
   if (!child.pid) throw new ToolError('INTERNAL', 'The process started without a PID.');
 
-
   let settleProcess!: () => void;
   const settled = new Promise<void>((resolve) => { settleProcess = resolve; });
 
@@ -494,6 +542,14 @@ export async function startProcess(options: StartProcessOptions) {
   info.osStartTime = await processStartIdentity(child.pid);
   await persistRoot(info.root);
   child.unref();
+
+  const classification = classifyProcess(options.command, true, null);
+  const recommendation = classification.kind === 'long-running'
+    ? { type: 'use_start_process' as const, message: 'This command looks long-running. start_process is appropriate; poll with read_process_output.', severity: 'info' as const }
+    : classification.kind === 'interactive'
+      ? { type: 'use_start_process' as const, message: 'This command appears interactive. start_process is required; interactive stdin may not survive recovery.', severity: 'warning' as const }
+      : undefined;
+
   return {
     pid: child.pid,
     processId,
@@ -505,6 +561,8 @@ export async function startProcess(options: StartProcessOptions) {
     startedAt: new Date(info.startedAt).toISOString(),
     durable: !info.persistenceError,
     stdinAvailable: child.stdin?.writable === true,
+    classification,
+    recommendation,
   };
 }
 
@@ -526,6 +584,7 @@ export async function processStatus(options: ProcessPidOptions) {
   const running = await refreshRecovered(options.pid, info);
   const stdout = info.child ? info.stdout : await readLog(info.stdoutLogPath);
   const stderr = info.child ? info.stderr : await readLog(info.stderrLogPath);
+  const classification = classifyProcess(info.command, running, info.exitCode);
   return {
     pid: options.pid,
     processId: info.processId,
@@ -545,6 +604,12 @@ export async function processStatus(options: ProcessPidOptions) {
     stderrOffset: stderr.length,
     outputTruncated: info.outputTruncated,
     stdinAvailable: info.child?.stdin?.writable === true,
+    classification,
+    hint: !running && info.exitCode !== 0
+      ? `Process exited with code ${info.exitCode}. Check stderr for details.`
+      : running && classification.kind === 'interactive'
+        ? 'Interactive process; stdin may be available via process_write.'
+        : undefined,
   };
 }
 
@@ -574,6 +639,8 @@ export async function readProcessOutput(options: ReadProcessOutputOptions) {
     running = await refreshRecovered(options.pid, info);
   }
 
+  const isLikelyComplete = !running && info.exitCode !== null;
+  const hasNew = current.stdout.length > sinceStdout || current.stderr.length > sinceStderr;
   return {
     pid: options.pid,
     processId: info.processId,
@@ -587,6 +654,11 @@ export async function readProcessOutput(options: ReadProcessOutputOptions) {
     nextStdoutOffset: current.stdout.length,
     nextStderrOffset: current.stderr.length,
     outputTruncated: info.outputTruncated,
+    hint: isLikelyComplete && !hasNew
+      ? 'Process has exited and there is no new output since the last read.'
+      : running && !hasNew && waitMs > 0
+        ? 'No new output arrived within wait_ms; the process may be idle or slow.'
+        : undefined,
   };
 }
 
@@ -632,6 +704,7 @@ export async function waitProcess(options: WaitProcessOptions) {
   };
   const out = options.includeOutput ? take(stdout.slice(outStart), maxOutputBytes) : '';
   const err = options.includeOutput ? take(stderr.slice(errStart), maxOutputBytes - Buffer.byteLength(out)) : '';
+  const classification = classifyProcess(info.command, running, info.exitCode);
   return {
     ...(options.includeOutput ? { stdout: out, stderr: err, outputHasMore: outStart + out.length < stdout.length || errStart + err.length < stderr.length } : {}),
     pid: options.pid,
@@ -648,6 +721,12 @@ export async function waitProcess(options: WaitProcessOptions) {
     nextStderrOffset: options.includeOutput ? errStart + err.length : stderr.length,
     outputTruncated: info.outputTruncated,
     waitedMs: Date.now() - startedWaitingAt,
+    classification,
+    hint: !running && info.exitCode !== 0
+      ? `Process exited with code ${info.exitCode}. Check stderr for details.`
+      : running
+        ? 'Process is still running; continue polling or call stop_process to terminate.'
+        : 'Process has completed.',
   };
 }
 
@@ -674,7 +753,17 @@ export async function stopProcess(options: ProcessPidOptions) {
   const info = await getManaged(options.pid, options);
   const wasRunning = await refreshRecovered(options.pid, info);
   if (!wasRunning) {
-    return { pid: options.pid, stopped: false, alreadyExited: true, exited: true, exitCode: info.exitCode, recovered: !info.child };
+    return {
+      pid: options.pid,
+      stopped: false,
+      alreadyExited: true,
+      exited: true,
+      exitCode: info.exitCode,
+      recovered: !info.child,
+      hint: info.exitCode !== null
+        ? `Process had already exited with code ${info.exitCode}.`
+        : 'Process was not running and had no recorded exit code.',
+    };
   }
 
   if (process.platform === 'win32') {
@@ -721,5 +810,8 @@ export async function stopProcess(options: ProcessPidOptions) {
     signal: info.signal,
     recovered: !info.child,
     waitedMs: Date.now() - startedWaitingAt,
+    hint: info.exitCode !== null
+      ? `Process stopped with exit code ${info.exitCode}.`
+      : 'Process was stopped before it could set an exit code.',
   };
 }

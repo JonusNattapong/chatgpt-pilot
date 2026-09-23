@@ -9,7 +9,7 @@ This document provides strict instructions, operational boundaries, and architec
 ```text
 chatgpt-pilot/
 ├── apps/
-│   ├── server/           # MCP Gateway runtime, Process Manager, Git, IPython (toolpy)
+│   ├── server/           # MCP Gateway runtime, Process Manager, Git
 │   └── playground/       # Testbed & integration fixtures
 ├── packages/
 │   ├── memory/           # Pure Markdown Living Memory Book (@chatgpt-pilot/memory)
@@ -32,7 +32,7 @@ chatgpt-pilot/
 
 When interacting with this codebase, remember the 5 capability providers federated by `apps/server`:
 
-1. **System & Machine (`apps/server`)**: Low-level filesystem, background process orchestration, verified Git commits, and stateful Python (`toolpy`).
+1. **System & Machine (`apps/server`)**: Low-level filesystem, background process orchestration, and verified Git commits.
 2. **ThinkForge (`packages/thinkforge`)**: Structured cognitive accelerators such as `think_analyze_problem`, `think_reframe_problem`, `think_challenge_idea`, `think_synthesize_ideas`, and `think_experiment_design`.
 3. **Skill Hub (`packages/skill-hub`)**: Dynamic discovery, routing, composition, feedback, and on-demand reading across 139 currently indexed skills in `skills/`.
 4. **Living Memory Book (`packages/memory`)**: Pure Markdown second brain indexed by Chapters, Subtopics, Timesteps, and Memory Drawers.

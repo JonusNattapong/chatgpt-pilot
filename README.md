@@ -37,7 +37,6 @@ ChatGPT / Codex
 - Node.js 22+
 - pnpm 9+ or 10+
 - Git 2.30+
-- Python 3.10+ with `ipykernel` only if you want persistent `toolpy` Python sessions
 - Chrome or Edge for the `browser_*` automation tools (or install Playwright Chromium with `pnpm --filter @chatgpt-pilot/server exec playwright install chromium`)
 
 ### Install
@@ -182,7 +181,6 @@ Pilot exposes bounded, structured primitives instead of forcing the model to do 
 - direct argv process execution
 - Git status, diff, history, verified commits, and controlled publishing
 - machine, port, disk, network, and runtime diagnostics
-- persistent Python execution through `toolpy`
 - stateful Playwright automation through `browser_session`, `browser_snapshot`, `browser_find`, `browser_screenshot`, and `browser_act`; interaction is accessibility/ref-first and screenshots stay MCP-native
 - Windows desktop automation split into read-only `computer_observe` (screenshot/cursor/zoom) and approval-gated `computer_act` (move/click/drag, Unicode typing, keys/hotkeys/hold, scroll, wait, and bounded batches)
 
@@ -261,7 +259,7 @@ The hybrid surface keeps the public MCP connection compact while still giving Ch
 ```text
 ChatGPT
   │
-  ├── toolpy
+  ├── Flow
   │     └── controlled programmatic access to capabilities
   │
   ├── capability_registry

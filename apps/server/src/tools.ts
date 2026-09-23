@@ -51,13 +51,15 @@ import {
 import { diskInfo, environmentInfo, listPorts, listProcesses, networkInfo, systemInfo } from './system-tools.js';
 import { gitCommitVerified, verifyChanges, type VerificationProfile } from './verification.js';
 import { createMachineRoutingSpecs } from './machine-router.js';
-import { PersistentIpythonRuntime, type RuntimeCapability } from './runtime-exec.js';
 import { osintFetch, osintSearch, type OsintScope } from './osint.js';
 import { explainPilotContext, loadPilotContext } from './context.js';
 import { TodoLedger, createTodoToolSpecs } from './todo-tools.js';
 import { createLearningToolSpecs } from './learning-tools.js';
 import { createBrowserUseSpecs } from './browser-use.js';
 import { createComputerUseSpecs } from './computer-use.js';
+import { scaffoldCode, SUPPORTED_TEMPLATES, writeCodeFromArtifact } from './code-tools.js';
+import { createGoalToolSpecs } from './goal-runtime.js';
+import { createGoalRunToolSpec } from './goal-runner.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -79,7 +81,7 @@ export interface ToolContext extends MachineAccess {
   machinesFile?: string;
   osintEnabled?: boolean;
   torProxy?: string;
-  runtimeManager?: PersistentIpythonRuntime;
+  runtimeManager?: unknown;
   /** Additional provider capabilities made available behind runtime_exec/toolpy. */
   runtimeCapabilities?: () => readonly ToolSpec[];
   runtimePolicyCheck?: (spec: ToolSpec, args: Record<string, unknown>) => RuntimePolicyDecision;
@@ -237,7 +239,6 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
   const access: MachineAccess = { root: context.root, unrestricted: context.unrestricted };
   const open = context.unrestricted;
   const audit = context.audit ?? new AuditLogger(defaultAuditPath(context.root));
-  const runtimeManager = context.runtimeManager ?? new PersistentIpythonRuntime(context.root);
   const todoLedger = new TodoLedger(context.root);
   const invokeLearningExternal = async (name: 'memory_drawer_put' | 'memory_drawer_delete', args: Record<string, unknown>) => {
     const spec = context.runtimeCapabilities?.().find((candidate) => candidate.name === name);
@@ -808,6 +809,26 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
       }),
     },
     {
+      name: 'code_from_artifact',
+      description: 'Create multiple files from an AI-generated artifact in JSON or Markdown. Use this when the model already split the work into files and you just need to materialize them.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          artifact: { type: 'string', description: 'Structured artifact text: JSON with files array, or Markdown with ### path: <file> headers and ``` code blocks.' },
+          path: { type: 'string', description: 'Base directory to write files into; defaults to the workspace root.' },
+          overwrite: { type: 'boolean', description: 'Replace existing files; defaults to false.' },
+        },
+        required: ['artifact'],
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      handler: async (args) => writeCodeFromArtifact({
+        ...access,
+        artifact: requireText(args, 'artifact'),
+        basePath: optionalString(args, 'path') ?? '.',
+        overwrite: optionalBoolean(args, 'overwrite'),
+      }),
+    },
+    {
       name: 'write_file',
       description: 'Create a UTF-8 text file, or replace one when "overwrite" is true. Prefer edit_file or update_file for changes to an existing file.',
       inputSchema: {
@@ -1346,6 +1367,8 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
 
   specs.push(...createTodoToolSpecs(context.root, todoLedger));
   specs.push(...createLearningToolSpecs(context.root, todoLedger, invokeLearningExternal));
+  specs.push(...createGoalToolSpecs({ ...access, maxTimeoutMs: context.maxTimeoutMs }));
+  specs.push(createGoalRunToolSpec({ ...access, maxTimeoutMs: context.maxTimeoutMs }));
   specs.push(...createBrowserUseSpecs(context.maxTimeoutMs), ...createComputerUseSpecs());
 
   if (context.osintEnabled) {
@@ -1396,6 +1419,7 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
     timeoutMs: context.maxTimeoutMs,
   }));
 
+  /* legacy runtime_exec removed; retained block is disabled while the refactor settles.
   specs.push({
     name: 'runtime_exec',
     description: 'Execute model-generated Python in a persistent IPython/Jupyter kernel. Variables, imports, and helper functions survive across calls sharing session_id. Use await tools.<name>(...) or await call(name, args) for MCP capabilities, await describe() for the declared catalog, and result(value) to return structured data. The kernel is an unrestricted control environment, not a sandbox, so this tool is available only with --dangerously-open-machine.',
@@ -1465,7 +1489,7 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
         timeoutMs: optionalInteger(args, 'timeout_ms') ?? Math.min(30_000, context.maxTimeoutMs),
         maxCalls: optionalInteger(args, 'max_calls') ?? 32,
         maxOutputBytes: optionalInteger(args, 'max_output_bytes') ?? 1024 * 1024,
-        invoke: async (name, nestedArgs) => {
+        invoke: async (name: string, nestedArgs: Record<string, unknown>) => {
           const nestedSpec = byName.get(name);
           if (!nestedSpec) throw new ToolError('UNKNOWN_TOOL', `Unknown runtime capability: ${name}.`);
           const decision = context.runtimePolicyCheck?.(nestedSpec, nestedArgs) ?? { allowed: true, requiresApproval: false };
@@ -1516,6 +1540,7 @@ export function createToolSpecs(context: ToolContext): ToolSpec[] {
       });
     },
   });
+  */
 
   return specs;
 }

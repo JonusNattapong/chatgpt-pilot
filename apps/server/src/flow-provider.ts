@@ -83,7 +83,7 @@ export function createFlowProvider(options: FlowProviderOptions): FlowToolProvid
 
   const executor: CapabilityExecutor = {
     execute: async (capability, input) => {
-      if (capability.startsWith('flow_') || capability === 'runtime_exec' || capability === 'toolpy' || capability === 'capability_registry') {
+      if (capability.startsWith('flow_')) {
         throw new ToolError('POLICY_DENIED', `Flow cannot recursively execute orchestration capability ${capability}.`);
       }
       const spec = options.capabilities().find((candidate) => candidate.name === capability);

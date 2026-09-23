@@ -39,6 +39,15 @@ interface JsonRpcMessage {
 interface PendingRequest {
   timer: NodeJS.Timeout;
   method: string;
+  line: string;
+  message: JsonRpcMessage;
+  deadlineAt: number;
+}
+
+interface ReplayRequest {
+  line: string;
+  message: JsonRpcMessage;
+  deadlineAt: number;
 }
 
 export interface SupervisorOptions {
@@ -63,6 +72,7 @@ export interface SupervisorOptions {
 
 const REINIT_ID = '__chatgpt_machine_supervisor_reinitialize__';
 const HEARTBEAT_ID = '__chatgpt_machine_supervisor_execute_probe__';
+const TOOL_CATALOG_ID = '__chatgpt_machine_supervisor_tool_catalog__';
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 5_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
@@ -87,6 +97,17 @@ function responseFor(id: JsonRpcMessage['id'], message: string, data?: Record<st
     id,
     error: { code: -32001, message, ...(data ? { data } : {}) },
   }) + '\n';
+}
+
+function readOnlyToolNames(result: unknown): string[] {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return [];
+  const tools = (result as { tools?: unknown }).tools;
+  if (!Array.isArray(tools)) return [];
+  return tools.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const tool = entry as { name?: unknown; annotations?: { readOnlyHint?: unknown } };
+    return typeof tool.name === 'string' && tool.annotations?.readOnlyHint === true ? [tool.name] : [];
+  });
 }
 
 function requestDeadline(message: JsonRpcMessage, fallbackMs: number): number {
@@ -115,6 +136,10 @@ export class McpSupervisor {
   private heartbeatDeadline?: NodeJS.Timeout;
   private pending = new Map<string | number | null, PendingRequest>();
   private queuedLines: string[] = [];
+  private replayQueue: ReplayRequest[] = [];
+  private readOnlyTools = new Set<string>();
+  private catalogRefreshTimer?: NodeJS.Timeout;
+  private catalogRefreshing = false;
   private initializeMessage?: JsonRpcMessage;
   private initializedNotification?: JsonRpcMessage;
   private reinitializing = false;
@@ -146,8 +171,10 @@ export class McpSupervisor {
     if (this.readinessTimer) clearTimeout(this.readinessTimer);
     if (this.heartbeatTimer) clearTimeout(this.heartbeatTimer);
     if (this.heartbeatDeadline) clearTimeout(this.heartbeatDeadline);
+    if (this.catalogRefreshTimer) clearTimeout(this.catalogRefreshTimer);
     for (const item of this.pending.values()) clearTimeout(item.timer);
     this.pending.clear();
+    this.replayQueue = [];
     this.health = 'stopped';
     const pid = this.child?.pid;
     this.child = undefined;
@@ -179,6 +206,8 @@ export class McpSupervisor {
       circuitRetryAt: this.circuitRetryAt ? new Date(this.circuitRetryAt).toISOString() : null,
       restarts: this.restarts,
       lastRestartReason: this.lastRestartReason ?? null,
+      replayQueued: this.replayQueue.length,
+      catalogRefreshing: this.catalogRefreshing,
       startedAt: this.startedAt,
       updatedAt: new Date().toISOString(),
     }, null, 2) + '\n', 'utf8');
@@ -268,25 +297,112 @@ export class McpSupervisor {
     this.forwardToChild(line, message);
   }
 
-  private forwardToChild(line: string, message: JsonRpcMessage): void {
+  private isReplayable(message: JsonRpcMessage): boolean {
+    if (!message.method) return false;
+    if (message.method === 'tools/call') {
+      const name = (message.params as { name?: unknown } | undefined)?.name;
+      return typeof name === 'string' && this.readOnlyTools.has(name);
+    }
+    return [
+      'tools/list',
+      'resources/list',
+      'resources/read',
+      'prompts/list',
+      'prompts/get',
+      'completion/complete',
+    ].includes(message.method);
+  }
+
+  private forwardToChild(line: string, message: JsonRpcMessage, preservedDeadlineAt?: number): void {
     if (!this.child || this.child.killed) {
       this.queuedLines.push(line);
       return;
     }
     if (message.id !== undefined && message.method) {
-      const timeoutMs = requestDeadline(message, this.options.requestTimeoutMs);
+      const timeoutMs = preservedDeadlineAt === undefined
+        ? requestDeadline(message, this.options.requestTimeoutMs)
+        : Math.max(0, preservedDeadlineAt - Date.now());
+      if (timeoutMs <= 0) {
+        this.output.write(responseFor(message.id, `MCP request deadline expired while reconnecting: ${message.method}.`, {
+          reason: 'replay_deadline_expired',
+          workerGeneration: this.childGeneration,
+          recoverable: true,
+        }));
+        return;
+      }
+      const deadlineAt = preservedDeadlineAt ?? Date.now() + timeoutMs;
       const timer = setTimeout(() => this.onRequestTimeout(message.id!, message.method!, timeoutMs), timeoutMs);
-      this.pending.set(message.id, { timer, method: message.method });
+      this.pending.set(message.id, { timer, method: message.method, line, message, deadlineAt });
     }
     this.child.stdin.write(line + '\n');
   }
 
+  private preservePendingForRestart(): void {
+    for (const [id, item] of this.pending) {
+      clearTimeout(item.timer);
+      if (this.isReplayable(item.message)) {
+        this.replayQueue.push({ line: item.line, message: item.message, deadlineAt: item.deadlineAt });
+        continue;
+      }
+      this.output.write(responseFor(id, 'MCP worker restarted before the request completed.', {
+        reason: 'worker_restarted',
+        workerGeneration: this.childGeneration,
+        health: this.health,
+        recoverable: true,
+        replaySafe: false,
+        hint: 'Mutation requests are never replayed automatically. Resume through durable Goal/Flow state or retry with the same idempotency key after reconciliation.',
+      }));
+    }
+    this.pending.clear();
+  }
+
+  private rejectReplayQueue(reason: string, message: string): void {
+    for (const item of this.replayQueue.splice(0)) {
+      if (item.message.id === undefined) continue;
+      this.output.write(responseFor(item.message.id, message, {
+        reason,
+        workerGeneration: this.childGeneration,
+        health: this.health,
+        recoverable: true,
+      }));
+    }
+  }
+
+  private refreshToolCatalog(generation: number): void {
+    if (!this.child || this.child.killed || generation !== this.childGeneration) return;
+    this.catalogRefreshing = true;
+    this.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: TOOL_CATALOG_ID, method: 'tools/list', params: {} }) + '\n');
+    const timeoutMs = Math.min(this.options.readinessTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS, 5_000);
+    this.catalogRefreshTimer = setTimeout(() => {
+      this.catalogRefreshTimer = undefined;
+      if (generation !== this.childGeneration || this.stopping || !this.catalogRefreshing) return;
+      this.catalogRefreshing = false;
+      this.readOnlyTools.clear();
+      this.error.write(`[chatgpt-machine-supervisor] tool catalog refresh timed out generation=${generation}; replaying only protocol-level read requests\n`);
+      this.finishWorkerReady(generation);
+    }, timeoutMs).unref();
+  }
+
   private markWorkerReady(generation: number): void {
+    if (generation !== this.childGeneration || !this.child || this.child.killed) return;
+    if (this.replayQueue.some((item) => item.message.method === 'tools/call')) {
+      this.refreshToolCatalog(generation);
+      return;
+    }
+    this.finishWorkerReady(generation);
+  }
+
+  private finishWorkerReady(generation: number): void {
     if (generation !== this.childGeneration || !this.child || this.child.killed) return;
     if (this.readinessTimer) {
       clearTimeout(this.readinessTimer);
       this.readinessTimer = undefined;
     }
+    if (this.catalogRefreshTimer) {
+      clearTimeout(this.catalogRefreshTimer);
+      this.catalogRefreshTimer = undefined;
+    }
+    this.catalogRefreshing = false;
     this.reinitializing = false;
     this.restarting = false;
     const probing = this.circuit === 'half_open';
@@ -312,13 +428,29 @@ export class McpSupervisor {
       this.error.write(`[chatgpt-machine-supervisor] worker stable generation=${generation}; circuit=closed\n`);
     }, stableMs).unref();
 
+    const replay = this.replayQueue.splice(0);
+    for (const item of replay) {
+      if (!this.isReplayable(item.message)) {
+        if (item.message.id !== undefined) {
+          this.output.write(responseFor(item.message.id, 'Request was read-only before restart but is not confirmed read-only on the replacement worker.', {
+            reason: 'read_only_contract_changed',
+            workerGeneration: this.childGeneration,
+            recoverable: true,
+            replaySafe: false,
+          }));
+        }
+        continue;
+      }
+      this.forwardToChild(item.line, item.message, item.deadlineAt);
+    }
+
     const queued = this.queuedLines.splice(0);
     for (const queuedLine of queued) {
       const queuedMessage = parseMessage(queuedLine);
       if (queuedMessage) this.forwardToChild(queuedLine, queuedMessage);
     }
     this.scheduleHeartbeat(generation);
-    this.error.write(`[chatgpt-machine-supervisor] worker ready generation=${generation} (health=${this.health}, circuit=${this.circuit})\n`);
+    this.error.write(`[chatgpt-machine-supervisor] worker ready generation=${generation} (health=${this.health}, circuit=${this.circuit}, replayed=${replay.length})\n`);
   }
 
   private scheduleHeartbeat(generation: number): void {
@@ -344,6 +476,18 @@ export class McpSupervisor {
     const message = parseMessage(line);
     if (!message) {
       this.error.write('[chatgpt-machine-supervisor] worker emitted malformed JSON line\n');
+      return;
+    }
+
+    if (message.id === TOOL_CATALOG_ID && (message.result !== undefined || message.error !== undefined)) {
+      if (this.catalogRefreshTimer) {
+        clearTimeout(this.catalogRefreshTimer);
+        this.catalogRefreshTimer = undefined;
+      }
+      this.catalogRefreshing = false;
+      if (message.error === undefined) this.readOnlyTools = new Set(readOnlyToolNames(message.result));
+      else this.readOnlyTools.clear();
+      this.finishWorkerReady(generation);
       return;
     }
 
@@ -377,12 +521,15 @@ export class McpSupervisor {
       if (item) {
         clearTimeout(item.timer);
         this.pending.delete(message.id);
-      }
+        if (item.method === 'tools/list' && message.error === undefined) {
+          this.readOnlyTools = new Set(readOnlyToolNames(message.result));
+        }
       }
       if (generation === 1 && this.initializeMessage?.id === message.id && message.error === undefined) {
         this.markWorkerReady(generation);
       }
-      this.output.write(line + '\n');
+    }
+    this.output.write(line + '\n');
   }
 
   private onRequestTimeout(id: string | number | null, method: string, timeoutMs: number): void {
@@ -419,6 +566,7 @@ export class McpSupervisor {
       }));
     }
     this.pending.clear();
+    this.rejectReplayQueue(reason, message);
   }
 
   private killCurrentWorker(): void {
@@ -470,6 +618,11 @@ export class McpSupervisor {
       clearTimeout(this.heartbeatDeadline);
       this.heartbeatDeadline = undefined;
     }
+    if (this.catalogRefreshTimer) {
+      clearTimeout(this.catalogRefreshTimer);
+      this.catalogRefreshTimer = undefined;
+    }
+    this.catalogRefreshing = false;
     this.restarting = true;
     this.reinitializing = Boolean(this.initializeMessage);
     this.restarts++;
@@ -487,7 +640,7 @@ export class McpSupervisor {
     }
 
     this.health = 'restarting';
-    this.rejectPending('worker_restarted', 'MCP worker restarted before the request completed.');
+    this.preservePendingForRestart();
     this.killCurrentWorker();
     this.writeState(false, 'restarting');
     this.error.write(`[chatgpt-machine-supervisor] restarting worker delay=${this.options.restartDelayMs}ms: ${reason}\n`);

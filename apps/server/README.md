@@ -11,8 +11,11 @@ The central runtime engine of ChatGPT Pilot. It hosts the MCP server over Stdio 
 - `tools.ts`: Primitives for filesystem reads, edits, search, processes, git operations, and capability registration.
 - `browser-use.ts`: Stateful Playwright browser driver with accessibility snapshots, generation-scoped element refs, ref search/actions, bounded batches, and MCP-native screenshots.
 - `computer-use.ts`: Structured Windows desktop observe/act driver with screenshot-relative coordinates, cursor/zoom observation, drag/key-hold support, and bounded batches.
-- `toolpy.ts`: Persistent IPython kernel sandbox for fast, multi-step programmatic capability calls.
 - `verification.ts`: Transactional pre-commit verification gates (`git_commit_verified`).
+
+### `goal_run` context and repair loop
+
+`goal_run` accepts bounded explicit context ranges such as `src/service.ts#L400-L520`. It preserves those ranges as dedicated hash-locked windows, adds bounded optional import callers/callees, and records which shown files were later edited in `.pilot/goal-context-stats.json` for a small deterministic discovery prior. During a repair cycle it may run related tests first; a targeted pass never replaces full verification, while a targeted failure schedules repair immediately and is returned as `targetedCheck`.
 - `audit.ts`: Immutable NDJSON audit logger recording all tool interactions to `.pilot/audit.ndjson`.
 
 ---

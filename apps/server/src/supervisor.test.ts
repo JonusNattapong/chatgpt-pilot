@@ -384,6 +384,137 @@ rl.on('line', line => {
   }
 });
 
+test('supervisor replays read-only calls after restart but never replays pending mutations', async () => {
+  const fixtureDir = await mkdtemp(path.join(tmpdir(), 'machine-safe-replay-'));
+  const fixture = path.join(fixtureDir, 'worker.mjs');
+  const stateFile = path.join(fixtureDir, 'supervisor.json');
+  await writeFile(fixture, `
+import readline from 'node:readline';
+const generation = Number(process.env.MCP_WORKER_GENERATION || '1');
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
+rl.on('line', line => {
+  const m = JSON.parse(line);
+  if (m.method === 'initialize') return send({jsonrpc:'2.0',id:m.id,result:{protocolVersion:m.params.protocolVersion || 'test',capabilities:{tools:{}},serverInfo:{name:'safe-replay-fixture',version:'1'}}});
+  if (m.method === 'notifications/initialized') return;
+  if (m.method === 'tools/list') return send({jsonrpc:'2.0',id:m.id,result:{tools:[
+    {name:'read',description:'read',inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:true}},
+    {name:'mutate',description:'mutate',inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:false}}
+  ]}});
+  if (m.method === 'tools/call' && m.params.name === 'read') {
+    if (generation === 1) return setTimeout(() => process.exit(17), 10);
+    return send({jsonrpc:'2.0',id:m.id,result:{content:[{type:'text',text:'read-ok-g'+generation}]}});
+  }
+  if (m.method === 'tools/call' && m.params.name === 'mutate') {
+    if (generation === 2) return setTimeout(() => process.exit(18), 10);
+    return send({jsonrpc:'2.0',id:m.id,result:{content:[{type:'text',text:'mutation-replayed-g'+generation}]}});
+  }
+});
+`, 'utf8');
+
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const error = new PassThrough();
+  let outputText = '';
+  output.on('data', (chunk) => { outputText += chunk.toString(); });
+  const supervisor = new McpSupervisor({
+    childEntry: fixture,
+    childArgs: ['--root', fixtureDir],
+    requestTimeoutMs: 3_000,
+    restartDelayMs: 20,
+    readinessTimeoutMs: 500,
+    circuitThreshold: 20,
+    stateFile,
+    stdio: { input, output, error },
+  });
+  try {
+    supervisor.start();
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 'test' } }) + '\n');
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) + '\n');
+    await waitFor(async () => outputText, (text) => text.includes('"id":2') && text.includes('"readOnlyHint":true'), 2_000);
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'read', arguments: {} } }) + '\n');
+    await waitFor(async () => outputText, (text) => text.includes('"id":3') && text.includes('read-ok-g2'), 4_000);
+    assert.doesNotMatch(outputText, /"id":3[^\n]*worker_restarted/);
+
+    const generation2 = await waitFor(
+      async () => JSON.parse(await readFile(stateFile, 'utf8')) as { workerGeneration: number; ready: boolean },
+      (state) => state.workerGeneration >= 2 && state.ready === true,
+      3_000,
+    );
+    assert.ok(generation2.workerGeneration >= 2);
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'mutate', arguments: {} } }) + '\n');
+    await waitFor(async () => outputText, (text) => text.includes('"id":4') && text.includes('worker_restarted') && text.includes('"replaySafe":false'), 4_000);
+    await waitFor(
+      async () => JSON.parse(await readFile(stateFile, 'utf8')) as { workerGeneration: number; ready: boolean },
+      (state) => state.workerGeneration >= 3 && state.ready === true,
+      4_000,
+    );
+    assert.doesNotMatch(outputText, /mutation-replayed-g3/);
+  } finally {
+    supervisor.stop();
+    input.end();
+    await rm(fixtureDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+test('supervisor rechecks read-only annotations on the replacement worker before replay', async () => {
+  const fixtureDir = await mkdtemp(path.join(tmpdir(), 'machine-replay-contract-'));
+  const fixture = path.join(fixtureDir, 'worker.mjs');
+  const stateFile = path.join(fixtureDir, 'supervisor.json');
+  await writeFile(fixture, `
+import readline from 'node:readline';
+const generation = Number(process.env.MCP_WORKER_GENERATION || '1');
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
+rl.on('line', line => {
+  const m = JSON.parse(line);
+  if (m.method === 'initialize') return send({jsonrpc:'2.0',id:m.id,result:{protocolVersion:m.params.protocolVersion || 'test',capabilities:{tools:{}},serverInfo:{name:'contract-fixture',version:'1'}}});
+  if (m.method === 'notifications/initialized') return;
+  if (m.method === 'tools/list') return send({jsonrpc:'2.0',id:m.id,result:{tools:[
+    {name:'read',description:'read',inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:generation === 1}}
+  ]}});
+  if (m.method === 'tools/call' && m.params.name === 'read') {
+    if (generation === 1) return setTimeout(() => process.exit(19), 10);
+    return send({jsonrpc:'2.0',id:m.id,result:{content:[{type:'text',text:'unexpected-replay'}]}});
+  }
+});
+`, 'utf8');
+
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const error = new PassThrough();
+  let outputText = '';
+  output.on('data', (chunk) => { outputText += chunk.toString(); });
+  const supervisor = new McpSupervisor({
+    childEntry: fixture,
+    childArgs: ['--root', fixtureDir],
+    requestTimeoutMs: 3_000,
+    restartDelayMs: 20,
+    readinessTimeoutMs: 500,
+    circuitThreshold: 20,
+    stateFile,
+    stdio: { input, output, error },
+  });
+  try {
+    supervisor.start();
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 'test' } }) + '\n');
+    input.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }) + '\n');
+    await waitFor(async () => outputText, (text) => text.includes('"id":2') && text.includes('"readOnlyHint":true'), 2_000);
+
+    input.write(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'read', arguments: {} } }) + '\n');
+    await waitFor(async () => outputText, (text) => text.includes('"id":3') && text.includes('read_only_contract_changed'), 4_000);
+    assert.doesNotMatch(outputText, /unexpected-replay/);
+  } finally {
+    supervisor.stop();
+    input.end();
+    await rm(fixtureDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
 test('killProcessTree handles undefined and invalid pid safely', () => {
   assert.doesNotThrow(() => killProcessTree(undefined));
   assert.doesNotThrow(() => killProcessTree(99999999));
@@ -406,7 +537,7 @@ test('supervisor proxies the real MCP server during normal use', async () => {
   try {
     await client.connect(transport);
     const listed = await client.listTools();
-    assert.equal(listed.tools.length, 69);
+    assert.equal(listed.tools.length, 74);
     const compact = await client.callTool({ name: 'machine_status', arguments: {} });
     assert.doesNotMatch(JSON.stringify(compact), /managedProcesses/);
     const detailed = await client.callTool({ name: 'machine_status', arguments: { detailed: true } });

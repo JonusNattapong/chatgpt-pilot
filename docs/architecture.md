@@ -31,11 +31,7 @@ ChatGPT Pilot functions as a unified gateway and capability fabric bridging AI c
 ### 2.1 Coding & System Execution (`apps/server`)
 - **Isolation & Sandboxing**: Restricts commands and mutations strictly inside `root` when in `workspace` mode. In `unrestricted` mode, operations require explicit authorization flags (`--dangerously-open-machine`).
 - **Verified Commits**: `git_commit_verified` executes pre-commit verification gates (unit tests, build checks, and linter). If verification fails or unstaged files mutate during testing, staging is rolled back and the commit is aborted.
-- **Persistent Python Execution (`toolpy`)**:
-  - Provides stateful IPython kernels holding runtime variables across calls.
-  - Exposes internal capabilities as local Python callable functions (`call_tool()`), reducing round-trip token overhead.
-- **Stateful Browser Automation (`browser_*`)**: Playwright-backed sessions use an accessibility/ref-first interface: `browser_session` owns navigation/tabs/lifecycle, `browser_snapshot` emits bounded ARIA state plus generation-scoped element refs, `browser_find` searches those refs cheaply, `browser_screenshot` emits bounded MCP-native PNG images, and `browser_act` performs ref-based actions/batches. Cookies/storage are never returned and idle sessions self-close.
-- **Structured Desktop Automation (`computer_*`)**: `computer_observe` is read-only and exposes full-screen capture, cursor position, and bounded zoom-region capture; `computer_act` owns structured mouse/keyboard mutations including drag, hold, scroll, and bounded batches. Coordinates remain screenshot-relative across multi-monitor layouts and no arbitrary script input is exposed.
+- **Hybrid Tool Surface**:
 
 ### 2.2 Cognitive Accelerators (`packages/thinkforge`)
 - Provides divergent and convergent thinking structures.
@@ -79,7 +75,7 @@ ChatGPT Pilot functions as a unified gateway and capability fabric bridging AI c
 - `flow_create` plans a durable DAG workflow from a goal plus steps; independent ready steps are eligible to run concurrently up to the run concurrency limit. Steps reference inner capabilities (with `expected_sha256` support on `edit_file` inputs) and are re-checked against policy at execution time.
 - `flow_run` executes a planned run, `flow_get` reads one run with all step states, and `flow_events` reads the append-only event log plus recent checkpoints.
 - `flow_resume` resumes a failed or interrupted run; unknown side effects fail closed unless `retry_uncertain` is explicitly authorized. `flow_cancel` persistently marks a run cancelled so no new step batch is scheduled.
-- Flow capabilities are grouped under `flow` in `capability_registry` and stay behind `toolpy` on the Hybrid surface, so ChatGPT composes DAGs programmatically instead of chaining dozens of direct calls.
+- Flow capabilities are grouped under `flow` in `capability_registry` directly on the Hybrid surface.
 
 ---
 
@@ -120,3 +116,7 @@ Storage is split into two deterministic layers:
 4. **Deterministic Fingerprints**: Worktree state fingerprints must omit runtime artifacts (`.pilot/`, `.chatgpt-machine/`, `.tunnel/`) to avoid false-positive verification errors.
 5. **Supervisor Circuit Breaker**: Background MCP workers must be monitored; failing or hung workers are killed cleanly and transparently restarted.
 6. **Evidence Before Learning**: Learning candidates are observations, not authority. Memory promotion requires evidence thresholds; Skill/Capability/GPT changes remain proposal-only and use the normal verification/policy workflow.
+
+### Goal-run context and repair behaviour
+
+`goal_run` context supports strict `path#Lstart-Lend` (or single-line) include ranges, bounded TypeScript/JavaScript/Python import-graph neighbours, and hash-locked multi-window reads. Neighbours are optional and low priority. After a failed full verification, related tests may run as a bounded targeted pre-check before the next full verification; a targeted result is surfaced as `targetedCheck`, and only full verification can advance a goal to review. Applied patches update additive per-goal context-use fields and the bounded `.pilot/goal-context-stats.json` usefulness table; old goal-run state remains loadable without these fields.

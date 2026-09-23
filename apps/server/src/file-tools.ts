@@ -9,6 +9,9 @@ import { StringDecoder } from 'node:string_decoder';
 import { ToolError } from './errors.js';
 import { resolveMachinePath, type MachineAccess } from './shell-tools.js';
 
+const MAX_BINARY_READ_BYTES = 16 * 1024 * 1024;
+const MAX_BINARY_CHUNK_BYTES = 1 * 1024 * 1024;
+
 const MAX_TEXT_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_READ_BYTES = 1024 * 1024;
 const MAX_SEARCH_RESULTS = 2_000;
@@ -49,6 +52,7 @@ export interface ReadFileOptions extends MachineAccess {
   maxLines?: number;
   maxBytes?: number;
   lineNumbers?: boolean;
+  encoding?: BufferEncoding;
 }
 
 export interface WriteFileOptions extends MachineAccess {
@@ -56,6 +60,7 @@ export interface WriteFileOptions extends MachineAccess {
   content: string;
   overwrite?: boolean;
   expectedSha256?: string;
+  encoding?: BufferEncoding;
 }
 
 export interface EditFileOptions extends MachineAccess {
@@ -67,6 +72,7 @@ export interface EditFileOptions extends MachineAccess {
   expectedSha256?: string;
   dryRun?: boolean;
   edits?: TransactionalEdit[];
+  encoding?: BufferEncoding;
 }
 
 export interface TransactionalEdit {
@@ -82,6 +88,13 @@ export interface UpdateFileOptions extends MachineAccess {
   endLine: number;
   content: string;
   expectedSha256?: string;
+  encoding?: BufferEncoding;
+}
+
+export interface ReadBinaryFileOptions extends MachineAccess {
+  filePath: string;
+  maxBytes?: number;
+  offsetBytes?: number;
 }
 
 export interface SearchCodeOptions extends MachineAccess {
@@ -101,6 +114,7 @@ export interface ListDirectoryOptions extends MachineAccess {
   directoryPath?: string;
   maxEntries?: number;
   includeHidden?: boolean;
+  cursor?: string;
 }
 
 export interface FindFilesOptions extends MachineAccess {
@@ -111,6 +125,7 @@ export interface FindFilesOptions extends MachineAccess {
   includeHidden?: boolean;
   exclude?: string[];
   includeIgnored?: boolean;
+  cursor?: string;
 }
 
 export interface FileInfoOptions extends MachineAccess {
@@ -162,7 +177,7 @@ function assertExpectedSha256(expected: string | undefined, actual: string | und
   }
 }
 
-async function loadTextFile(accessConfig: MachineAccess, requestedPath: string): Promise<TextFile> {
+async function loadTextFile(accessConfig: MachineAccess, requestedPath: string, encoding: BufferEncoding = 'utf8'): Promise<TextFile> {
   const absolutePath = await resolveMachinePath(accessConfig, requestedPath);
   const info = await stat(absolutePath);
   if (!info.isFile()) {
@@ -178,14 +193,14 @@ async function loadTextFile(accessConfig: MachineAccess, requestedPath: string):
   }
 
   const buffer = await readFile(absolutePath);
-  if (buffer.includes(0)) {
+  if (encoding.toLowerCase() === 'utf8' && buffer.includes(0)) {
     throw new ToolError(
       'BINARY_FILE',
       `File appears to be binary: ${requestedPath}`,
       'Use file_info or image_info to inspect non-text files.',
     );
   }
-  const content = buffer.toString('utf8');
+  const content = buffer.toString(encoding);
   const eol = content.includes('\r\n') ? '\r\n' : '\n';
   const trailingNewline = content.endsWith('\n');
   const lines = content.replace(/\r\n/g, '\n').split('\n');
@@ -364,7 +379,8 @@ export async function listDirectory(options: ListDirectoryOptions) {
   const visibleEntries = entries
     .filter((entry) => options.includeHidden || !entry.name.startsWith('.'))
     .sort((left, right) => left.name.localeCompare(right.name));
-  const selected = visibleEntries.slice(0, maxEntries);
+  const startIndex = decodeCursor(options.cursor, visibleEntries.length);
+  const selected = visibleEntries.slice(startIndex, startIndex + maxEntries);
   const entriesWithMetadata = await Promise.all(selected.map(async (entry) => {
     const entryPath = path.join(absolutePath, entry.name);
     const type = entry.isFile() ? 'file' : entry.isDirectory() ? 'directory' : entry.isSymbolicLink() ? 'symlink' : 'other';
@@ -378,12 +394,32 @@ export async function listDirectory(options: ListDirectoryOptions) {
       modifiedAt: info?.mtime.toISOString(),
     };
   }));
+  const nextIndex = startIndex + selected.length;
   return {
     path: absolutePath,
     entries: entriesWithMetadata,
     totalEntries: visibleEntries.length,
-    truncated: visibleEntries.length > selected.length,
+    truncated: nextIndex < visibleEntries.length,
+    cursor: nextIndex < visibleEntries.length ? encodeCursor(nextIndex) : undefined,
+    nextCursor: nextIndex < visibleEntries.length ? encodeCursor(nextIndex) : undefined,
   };
+}
+
+function encodeCursor(index: number): string {
+  return Buffer.from(String(index), 'utf8').toString('base64url');
+}
+
+function decodeCursor(cursor: string | undefined, max: number): number {
+  if (!cursor) return 0;
+  try {
+    const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
+    const value = Number(decoded);
+    if (!Number.isInteger(value) || value < 0 || value > max) throw new ToolError('INVALID_ARGUMENT', `Invalid directory cursor: ${cursor}.`);
+    return value;
+  } catch (error) {
+    if ((error as ToolError)?.code === 'INVALID_ARGUMENT') throw error;
+    throw new ToolError('INVALID_ARGUMENT', `Invalid directory cursor: ${cursor}.`);
+  }
 }
 
 interface WalkOptions {
@@ -441,7 +477,9 @@ export async function findFiles(options: FindFilesOptions) {
   const absolutePath = await resolveMachinePath(options, directoryPath, true);
   const pattern = options.glob ?? '**/*';
   const matcher = globToRegExp(pattern);
+  const startIndex = decodeFindCursor(options.cursor);
   const matches: string[] = [];
+  let totalSeen = 0;
 
   const { stopped, excludedDirectories } = await walkFiles({
     root: absolutePath,
@@ -451,12 +489,39 @@ export async function findFiles(options: FindFilesOptions) {
     includeIgnored: options.includeIgnored,
     accept: (relativePath) => matcher.test(relativePath),
     onFile: (entryPath) => {
+      if (totalSeen < startIndex) {
+        totalSeen++;
+        return true;
+      }
       matches.push(entryPath);
+      totalSeen++;
       return matches.length < maxResults;
     },
   });
 
-  return { path: absolutePath, glob: pattern, matches, truncated: stopped, excludedDirectories };
+  const nextIndex = startIndex + matches.length;
+  return {
+    path: absolutePath,
+    glob: pattern,
+    matches,
+    truncated: stopped || totalSeen < startIndex + matches.length,
+    excludedDirectories,
+    cursor: stopped || totalSeen < startIndex + matches.length ? encodeCursor(nextIndex) : undefined,
+    nextCursor: stopped || totalSeen < startIndex + matches.length ? encodeCursor(nextIndex) : undefined,
+  };
+}
+
+function decodeFindCursor(cursor: string | undefined): number {
+  if (!cursor) return 0;
+  try {
+    const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
+    const value = Number(decoded);
+    if (!Number.isInteger(value) || value < 0) throw new ToolError('INVALID_ARGUMENT', `Invalid find cursor: ${cursor}.`);
+    return value;
+  } catch (error) {
+    if ((error as ToolError)?.code === 'INVALID_ARGUMENT') throw error;
+    throw new ToolError('INVALID_ARGUMENT', `Invalid find cursor: ${cursor}.`);
+  }
 }
 
 export async function fileInfo(options: FileInfoOptions) {
@@ -474,7 +539,7 @@ export async function fileInfo(options: FileInfoOptions) {
 }
 
 export async function readMachineFile(options: ReadFileOptions) {
-  const file = await loadTextFile(options, options.filePath);
+  const file = await loadTextFile(options, options.filePath, options.encoding ?? 'utf8');
   const startLine = options.startLine ?? 1;
   const maxLines = options.maxLines ?? 1_000;
   const maxBytes = options.maxBytes ?? MAX_READ_BYTES;
@@ -505,6 +570,8 @@ export async function readMachineFile(options: ReadFileOptions) {
   const rendered = options.lineNumbers
     ? selected.map((line, offset) => `${String(startLine + offset).padStart(numberWidth, ' ')}\t${line}`)
     : selected;
+  const encoding = options.encoding ?? 'utf8';
+  const content = rendered.join(file.eol);
   return {
     path: file.absolutePath,
     startLine,
@@ -512,10 +579,71 @@ export async function readMachineFile(options: ReadFileOptions) {
     totalLines: file.lines.length,
     truncated: endLine < file.lines.length,
     lineNumbers: options.lineNumbers === true,
+    encoding,
     // Callers pass this back as "expected_sha256" to make a later write safe.
     sha256: file.sha256,
-    content: rendered.join(file.eol),
+    content,
   };
+}
+
+export async function readBinaryFile(options: ReadBinaryFileOptions) {
+  const absolutePath = await resolveMachinePath(options, options.filePath);
+  const info = await stat(absolutePath);
+  if (!info.isFile()) {
+    throw new ToolError('NOT_A_FILE', `Path is not a file: ${options.filePath}`);
+  }
+  const maxBytes = options.maxBytes ?? MAX_BINARY_READ_BYTES;
+  validatePositiveInteger(maxBytes, 'max_bytes', MAX_BINARY_READ_BYTES);
+  const offsetBytes = options.offsetBytes ?? 0;
+  if (offsetBytes < 0 || offsetBytes >= info.size) {
+    throw new ToolError('INVALID_ARGUMENT', `"offset_bytes" must be between 0 and file size ${info.size}.`);
+  }
+
+  const remaining = Math.min(maxBytes, info.size - offsetBytes);
+  const buffer = Buffer.allocUnsafe(remaining);
+  let readBytes = 0;
+  const stream = createReadStream(absolutePath, { start: offsetBytes, end: offsetBytes + remaining - 1, highWaterMark: MAX_BINARY_CHUNK_BYTES });
+  for await (const chunk of stream) {
+    const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    chunkBuffer.copy(buffer, readBytes);
+    readBytes += chunkBuffer.length;
+    if (readBytes >= remaining) break;
+  }
+  return {
+    path: absolutePath,
+    offsetBytes,
+    bytes: readBytes,
+    truncated: offsetBytes + readBytes < info.size,
+    totalBytes: info.size,
+    mimeType: guessBinaryMimeType(absolutePath, buffer),
+    sha256: createHash('sha256').update(buffer.slice(0, readBytes)).digest('hex'),
+    data: buffer.slice(0, readBytes).toString('base64'),
+  };
+}
+
+function guessBinaryMimeType(filePath: string, buffer: Buffer): string {
+  const ext = path.extname(filePath).toLowerCase();
+  const byExt: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.pdf': 'application/pdf',
+    '.zip': 'application/zip',
+    '.gz': 'application/gzip',
+    '.tar': 'application/x-tar',
+    '.exe': 'application/x-msdownload',
+    '.dll': 'application/x-msdownload',
+    '.so': 'application/x-sharedlib',
+    '.dylib': 'application/x-mach-binary',
+    '.wasm': 'application/wasm',
+  };
+  if (byExt[ext]) return byExt[ext];
+  if (buffer.length >= 4 && buffer.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) return 'application/zip';
+  if (buffer.length >= 4 && buffer.subarray(0, 4).equals(Buffer.from([0x25, 0x50, 0x44, 0x46]))) return 'application/pdf';
+  if (buffer.length >= 2 && buffer.subarray(0, 2).equals(Buffer.from([0x1f, 0x8b]))) return 'application/gzip';
+  return 'application/octet-stream';
 }
 
 export async function writeMachineFile(options: WriteFileOptions) {
@@ -528,12 +656,15 @@ export async function writeMachineFile(options: WriteFileOptions) {
       'Read the file first, then retry with "overwrite" and "expected_sha256".',
     );
   }
+  const encoding = options.encoding ?? 'utf8';
   if (options.expectedSha256 !== undefined) {
-    const current = existed ? hashText(await readFile(absolutePath, 'utf8')) : undefined;
+    const current = existed ? hashText(await readFile(absolutePath, encoding)) : undefined;
     assertExpectedSha256(options.expectedSha256, current, options.filePath);
   }
   await mkdir(path.dirname(absolutePath), { recursive: true });
-  await writeFile(absolutePath, options.content, { encoding: 'utf8', flag: options.overwrite ? 'w' : 'wx' });
+  let writeOptions: { encoding?: BufferEncoding; flag?: string } = { encoding };
+  if (options.overwrite) writeOptions.flag = 'w';
+  await writeFile(absolutePath, options.content, writeOptions);
   return {
     path: absolutePath,
     created: !existed,
@@ -541,6 +672,23 @@ export async function writeMachineFile(options: WriteFileOptions) {
     bytes: Buffer.byteLength(options.content),
     sha256: hashText(options.content),
   };
+}
+
+export async function writeMachineFileWithRetry(options: WriteFileOptions & { retryOnConflict?: boolean; maxRetries?: number }) {
+  const maxRetries = options.maxRetries ?? 3;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await writeMachineFile(options);
+    } catch (error) {
+      lastError = error;
+      if (!options.retryOnConflict || !(error instanceof ToolError) || error.code !== 'PRECONDITION_FAILED') {
+        throw error;
+      }
+      if (attempt === maxRetries - 1) throw error;
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -573,7 +721,7 @@ export async function editMachineFile(options: EditFileOptions): Promise<any> {
   if (options.expectedReplacements !== undefined) {
     validatePositiveInteger(options.expectedReplacements, 'expected_replacements', 10_000);
   }
-  const file = await loadTextFile(options, options.filePath);
+  const file = await loadTextFile(options, options.filePath, options.encoding ?? 'utf8');
   assertExpectedSha256(options.expectedSha256, file.sha256, options.filePath);
 
   const occurrences = file.content.split(options.oldText).length - 1;
@@ -631,7 +779,7 @@ export async function editMachineFile(options: EditFileOptions): Promise<any> {
     };
   }
 
-  await writeFile(file.absolutePath, content, 'utf8');
+  await writeFile(file.absolutePath, content, { encoding: options.encoding ?? 'utf8' });
   return {
     path: file.absolutePath,
     dryRun: false,
@@ -645,7 +793,7 @@ export async function editMachineFile(options: EditFileOptions): Promise<any> {
 /** Validate every replacement in memory, then make one write: no partial edit. */
 export async function editMachineFileTransaction(options: Omit<EditFileOptions, 'oldText' | 'newText' | 'replaceAll' | 'expectedReplacements'> & { edits: TransactionalEdit[] }) {
   if (!Array.isArray(options.edits) || options.edits.length === 0) throw new ToolError('INVALID_ARGUMENT', '"edits" must contain at least one edit.');
-  const file = await loadTextFile(options, options.filePath);
+  const file = await loadTextFile(options, options.filePath, options.encoding ?? 'utf8');
   assertExpectedSha256(options.expectedSha256, file.sha256, options.filePath);
   let content = file.content;
   const applied: Array<{ replacements: number; firstReplacedLine: number }> = [];
@@ -661,12 +809,12 @@ export async function editMachineFileTransaction(options: Omit<EditFileOptions, 
     content = replaceAll ? content.split(edit.oldText).join(edit.newText) : content.replace(edit.oldText, edit.newText);
   }
   const result = { path: file.absolutePath, dryRun: options.dryRun === true, edits: applied, replacements: applied.reduce((sum, item) => sum + item.replacements, 0), sha256: hashText(content), bytes: Buffer.byteLength(content) };
-  if (!options.dryRun) await writeFile(file.absolutePath, content, 'utf8');
+  if (!options.dryRun) await writeFile(file.absolutePath, content, { encoding: options.encoding ?? 'utf8' });
   return result;
 }
 
 export async function updateMachineFile(options: UpdateFileOptions) {
-  const file = await loadTextFile(options, options.filePath);
+  const file = await loadTextFile(options, options.filePath, options.encoding ?? 'utf8');
   assertExpectedSha256(options.expectedSha256, file.sha256, options.filePath);
   validatePositiveInteger(options.startLine, 'start_line');
   validatePositiveInteger(options.endLine, 'end_line');
@@ -684,7 +832,7 @@ export async function updateMachineFile(options: UpdateFileOptions) {
   const lines = [...file.lines];
   lines.splice(options.startLine - 1, options.endLine - options.startLine + 1, ...replacementLines(options.content));
   const content = lines.join(file.eol) + (file.trailingNewline ? file.eol : '');
-  await writeFile(file.absolutePath, content, 'utf8');
+  await writeFile(file.absolutePath, content, { encoding: options.encoding ?? 'utf8' });
   return {
     path: file.absolutePath,
     replacedStartLine: options.startLine,

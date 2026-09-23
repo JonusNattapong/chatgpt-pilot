@@ -1,7 +1,7 @@
 {
   "name": "@chatgpt-pilot/server",
   "version": "1.0.0",
-  "description": "ChatGPT Pilot core server: Local MCP bridge, Hybrid runtime, toolpy, tunnel, and supervisor",
+  "description": "ChatGPT Pilot core server: Local MCP bridge, Hybrid runtime, tunnel, and supervisor",
   "type": "module",
   "main": "dist/index.js",
   "bin": {

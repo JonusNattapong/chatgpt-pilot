@@ -33,7 +33,7 @@ Chronological highlights reconstructed from retrievable context. Dates are appro
 - 2026-09-02: Clew `main` HEAD remembered as `00b1b7e4`; hybrid memory architecture and provenance/supersession hardening discussed.
 - 2026-09-03: ChatGPTMCP hardening release snapshot commit `596327b`, 101/101 tests; contract v4/44 tools at that point.
 - 2026-09-04:
-  - `runtime_exec` moved to persistent Jupyter/IPython sessions with top-level await and tool capability composition.
+  - Capability registry moved to a hybrid surface with grouped capabilities and direct automation families.
   - standard scratch workspace `D:\temp\ChatGPT` and stable-session workflow documented.
   - tunnel workflow clarified: broad restart can affect multiple tunnel-managed services; scoped restart preferred when only Machine MCP should restart.
   - Clew hardening pass remembered at 999 tests / 0 failed, 2,978 assertions, 175 test files, Biome 0 warnings, TS noEmit passed; not committed/pushed at snapshot.

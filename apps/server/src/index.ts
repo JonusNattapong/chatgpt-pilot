@@ -146,10 +146,10 @@ export function parseOptions(args: string[]): Options {
         `  --dry-run                     Refuse mutations and report their simulated status\n` +
         `  --enable-osint                Enable bounded public-web/.onion OSINT tools\n` +
         `  --tor-proxy <socks5h://...>   Local Tor SOCKS5 proxy for .onion fetches\n` +
-        `  --tool-surface <mode>         legacy (default) or hybrid (toolpy + capability registry)\n` +
-        `  --skill-hub-dir <path>        Attach a local Skill Hub MCP provider behind toolpy\n` +
-        `  --thinkforge-dir <path>       Attach a local ThinkForge MCP provider behind toolpy\n` +
-        `  --memory-dir <path>           Attach a local OurBook memory MCP provider behind toolpy\n`);
+        `  --tool-surface <mode>         legacy (default) or hybrid (capability registry)\n` +
+        `  --skill-hub-dir <path>        Attach a local Skill Hub MCP provider\n` +
+        `  --thinkforge-dir <path>       Attach a local ThinkForge MCP provider\n` +
+        `  --memory-dir <path>           Attach a local OurBook memory MCP provider\n`);
       process.exit(0);
     } else {
       throw new Error(`Unknown option: ${arg}`);
@@ -185,7 +185,7 @@ export function parseOptions(args: string[]): Options {
   }
   if (!['mrtr', 'deny'].includes(options.approvalMode)) throw new Error('--approval-mode must be one of: mrtr, deny.');
   if (!['legacy', 'hybrid'].includes(options.toolSurface)) throw new Error('--tool-surface must be one of: legacy, hybrid.');
-  if (options.toolSurface === 'hybrid' && !options.dangerouslyOpenMachine) throw new Error('--tool-surface hybrid requires --dangerously-open-machine because toolpy uses the persistent Python runtime.');
+  if (options.toolSurface === 'hybrid' && !options.dangerouslyOpenMachine) throw new Error('--tool-surface hybrid requires --dangerously-open-machine.');
   if (options.http && !['127.0.0.1', 'localhost', '::1'].includes(options.httpHost) && !options.httpToken) {
     throw new Error('HTTP binding outside loopback requires --http-token or MCP_HTTP_TOKEN.');
   }
@@ -235,7 +235,6 @@ async function buildRuntime(
     machinesFile: options.machinesFile,
     osintEnabled: options.osintEnabled,
     torProxy: options.torProxy,
-    runtimeCapabilities: () => externalCapabilities,
     runtimePolicyCheck: (spec, args) => evaluatePolicy(policy, spec, args, options.root),
   });
 

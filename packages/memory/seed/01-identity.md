@@ -43,7 +43,7 @@ Primary local repo: D:\Projects\Github\ChatGPTMCP; GitHub: JonusNattapong/ChatGP
 - Important tools/features: `read_files`, `project_snapshot`, `machine_read`, remote capability cache/fingerprint/refresh, audit targetMachine/remoteTool, PowerShell non-terminating error handling, runtime/configured root visibility.
 - Multi-machine direction: support more than two machines with machine/IP selection.
 - P0 direction: local execution must be stable, smooth, recoverable, observable.
-- Recent architecture direction: one ChatGPTMCP surface with coding tool, think tool, skills tool, memory tool; ChatGPT Web acts as planning/decision brain while lower-level execution stays behind toolpy/capabilities.
+- Recent architecture direction: one ChatGPTMCP surface with coding tool, think tool, skills tool, memory tool; ChatGPT Web acts as planning/decision brain while lower-level execution stays behind capability registry.
 
 ### ChatGPT Skill Hub / chatgpt-skills
 Paths remembered:
