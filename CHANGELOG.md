@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - update tunnel lifecycle and runtime config (`2acf3a2`)
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`71d0255`)
 - **changelog**: auto-update CHANGELOG.md [skip ci] (`a35e280`)
+- ignore .clew runtime cache (`01a1e56`)
+- **changelog**: auto-update CHANGELOG.md [skip ci] (`39ccc91`)
 
 ### 🐛 Bug Fixes
 
